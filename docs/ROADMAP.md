@@ -1,44 +1,30 @@
-# 开发路线与认领顺序
+# 从可运行基础版开始增量开发
 
-Issue 为可执行任务源；PR 中用 `Closes #编号` 关联，依赖关系写在各 Issue 内。M0–M4 为 PRD 逻辑阶段，未擅自绑定日历日期或分配人员。
+先运行应用，再认领Issue。执行规范：[contribute.md](../contribute.md)；基础版范围：[BASELINE.md](BASELINE.md)；任务总入口：[Issue #1](https://github.com/LosAveRoad/zero-cup/issues/1)。
 
-| 阶段 | 交付                                        | 并行与前置条件                                   |
-| ---- | ------------------------------------------- | ------------------------------------------------ |
-| M0   | 基建、Viewport 资源生命周期、首页与状态导航 | 基建完成后，Viewport 与状态导航可并行            |
-| M1   | 几何计算、防破面和轮廓编辑器                | 几何可独立先做；编辑器依赖 Viewport+几何         |
-| M2   | Canvas/UV、历史、工具 UI 与纹样资产         | UV 与历史可按接口并行；UI 集成待引擎与导航完成   |
-| M3   | PBR 烧制和拍照导出                          | 材质依赖 Viewport；拍照依赖材质和 Canvas         |
-| M4   | IndexedDB/画廊、挑战、闭环与性能验收        | 存储和挑战纯计算可先按契约开发；集成依赖前面模块 |
+## 当前起点
 
-建议分工：渲染/几何一人，彩绘/交互一人，UI/存储/测试一人；只是认领建议，成员账号与职责尚未指定。公共类型和关键集成接口须跨模块 review。
+滑块拉坯→3D画线→撤销重做→烧制→PNG→本地存档→刷新打开/删除已接通。该基础版是团队共同的运行基线，不再安排成员分别从零搭Viewport、Canvas和导航后最后拼装。
 
-## 本次初始化计划与状态
+## 可独立验收的增量
 
-- [x] 读取 PRD、确认空仓库；保留仓库名称与公开状态。
-- [x] 添加 React18/TS/Vite 工程、公共契约、测试运行器和开发规范。
-- [x] 添加 PR 工作流、模板、Dependabot。
-- [x] GitHub Actions 实跑：Quality、Browser smoke、CI required 均通过；PR 触发路径已实测。
-- [x] 创建 13 个分模块/协作 Issue，写明依赖与验收；总入口 [#1](https://github.com/LosAveRoad/zero-cup/issues/1)。
-- [ ] 管理员启用主分支规则（连接不提供设置写接口）。
+| Issue                                                   | 在现有版本上增加什么      | 完成后如何演示                     |
+| ------------------------------------------------------- | ------------------------- | ---------------------------------- |
+| [#12](https://github.com/LosAveRoad/zero-cup/issues/12) | 平滑器型与二维轮廓编辑    | 拖动轮廓点→模型变化→彩绘保存仍正常 |
+| [#16](https://github.com/LosAveRoad/zero-cup/issues/16) | 橡皮擦、印章与工具上下文  | 画线→落印→擦除→撤销→保存刷新一致   |
+| [#15](https://github.com/LosAveRoad/zero-cup/issues/15) | 画笔/历史交互稳健性和性能 | 跨缝/快速输入/20次以上操作不丢画面 |
+| [#17](https://github.com/LosAveRoad/zero-cup/issues/17) | 连续烧制材质与光照效果    | 同机位烧制前后效果明显，操作锁定   |
+| [#18](https://github.com/LosAveRoad/zero-cup/issues/18) | 推荐机位与导出排版        | 切机位/背景→导出1080图片→继续创作  |
+| [#19](https://github.com/LosAveRoad/zero-cup/issues/19) | 存储校验、迁移和失败恢复  | 旧作品可打开；配额失败不丢当前作品 |
+| [#20](https://github.com/LosAveRoad/zero-cup/issues/20) | 三种器型挑战              | 选挑战→目标剪影和分数→完成并保存   |
+| [#21](https://github.com/LosAveRoad/zero-cup/issues/21) | 增量回归与性能验收        | Chrome/Edge真机证据与闭环回归      |
 
-## 完成定义
+#12、#15、#17、#18、#19可按现有契约开始；#16和#15均修改笔划数据，需先协调契约并避免同时重写引擎；#20可并行做评分，但UI接入需与#12协调。一个大Issue允许拆成多个保持可运行的小PR。
 
-各任务通过单元/集成检查后，最终验收还必须覆盖：拉坯→彩绘→烧制→1080 PNG→归档→刷新恢复→删除；跨缝无拉线、超过 20 次操作不丢画面、存储配额失败可恢复；Chrome/Edge 真机性能和资源释放实测。任务清单全关闭之前不宣称 MVP0 完成。
+原#10/#11/#13/#14的底层模块任务已由基础版和以上增量替代，保留记录、不让成员继续从零重复实现。关闭为替代/不再按旧方案执行，不表示原PRD全部细项完成。
 
-## 可认领任务
+## 完成标准
 
-- [[M0][P0] Three.js Viewport 与资源生命周期](https://github.com/LosAveRoad/zero-cup/issues/10)
-- [[M0][P0] 首页、创作阶段状态与导航守卫](https://github.com/LosAveRoad/zero-cup/issues/11)
-- [[M1][P0] 轮廓约束、样条采样与 LatheGeometry](https://github.com/LosAveRoad/zero-cup/issues/12)
-- [[M1][P0] 二维控制点编辑器与实时拉坯工作台](https://github.com/LosAveRoad/zero-cup/issues/13)
-- [[M2][P0] CanvasTexture、Raycaster UV 与跨接缝绘制](https://github.com/LosAveRoad/zero-cup/issues/14)
-- [[M2][P0] 20 步撤销重做与完整作品恢复策略](https://github.com/LosAveRoad/zero-cup/issues/15)
-- [[M2][P0] 彩绘工具工作台与三款授权纹样](https://github.com/LosAveRoad/zero-cup/issues/16)
-- [[M3][P0] 素坯与釉面 PBR 配方及烧制转场](https://github.com/LosAveRoad/zero-cup/issues/17)
-- [[M3][P0] 成品机位、调光与 1080×1080 PNG 导出](https://github.com/LosAveRoad/zero-cup/issues/18)
-- [[M4][P0] IndexedDB 存档、恢复、画廊与错误处理](https://github.com/LosAveRoad/zero-cup/issues/19)
-- [[M4][P0] 三套器型挑战、轮廓评分与目标剪影](https://github.com/LosAveRoad/zero-cup/issues/20)
-- [[M4][P0] 完整闭环 E2E、资源与性能验收](https://github.com/LosAveRoad/zero-cup/issues/21)
-- [[协作配置] 启用 main 必需检查与团队写权限](https://github.com/LosAveRoad/zero-cup/issues/22)
+每个PR都保持基础创作闭环；功能验收逐项记录，不能靠“目录已建立”或“标题可见”宣告完成。完整MVP0仍需高级编辑、材质、挑战、错误路径和性能实测。
 
-初始化检查证据：[首次 main 流水线](https://github.com/LosAveRoad/zero-cup/actions/runs/41855602292)，[PR 流水线样例](https://github.com/LosAveRoad/zero-cup/actions/runs/41855936004)。不兼容的依赖升级 PR 会失败，应修复或保留当前锁定版本，不自动合并。
+仓库主分支强制门禁与成员权限仍见 [#22](https://github.com/LosAveRoad/zero-cup/issues/22)，工作流本身不代表已开启branch protection。

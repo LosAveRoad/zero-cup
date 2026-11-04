@@ -2,7 +2,7 @@
 
 桌面浏览器中的青花瓷数字工坊：**拉坯 → 彩绘 → 烧制 → 拍照归档**。
 
-> 当前为工程初始化版本，仅包含应用入口、数据契约和检查流水线。制作玩法尚未实现；不能将冒烟测试通过视为 MVP0 验收完成。
+> 当前为可运行基础版：滑块拉坯、3D 表面画线、撤销重做、烧制、1080 PNG、本地保存与刷新恢复均已接通。平滑轮廓编辑、印章、橡皮擦和挑战仍待增量完善。
 
 ## 开始开发
 
@@ -31,8 +31,9 @@ npm run dev
 ## 从哪里开始
 
 1. 阅读 [需求与边界](docs/PRODUCT.md)、[架构与契约](docs/ARCHITECTURE.md)。
-2. 在 [Issue 列表](https://github.com/LosAveRoad/zero-cup/issues) 认领一个依赖已满足的任务，按 [协作指南](CONTRIBUTING.md) 开发。
-3. PR 填写 `Closes #编号` 和验收证据，检查通过后由另一成员审阅。
+2. 先阅读 **[contribute.md](contribute.md)**；AI 也从根目录 `AGENTS.md` 进入同一规则。
+3. 在 [Issue 列表](https://github.com/LosAveRoad/zero-cup/issues) 认领一个依赖已满足的任务，按 [协作指南](CONTRIBUTING.md) 开发。
+4. PR 填写 `Closes #编号` 和验收证据，检查通过后由另一成员审阅。
 
 [任务路线图](docs/ROADMAP.md) · [CI 与分支保护](docs/CI.md)
 

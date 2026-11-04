@@ -5,7 +5,7 @@
 `PR checks` 对所有指向 `main` 的 PR（含 fork）及 main push 运行，没有路径过滤和跳过规则。
 
 - **Quality**：`npm ci`、Prettier、ESLint、TypeScript、Vitest+核心覆盖率、Vite build。
-- **Browser smoke**：安装 Chromium 并运行 Playwright，保存 report/失败 trace 7 天。功能逐步增加后扩展为完整创作闭环。
+- **Browser smoke**：安装 Chromium 并运行 Playwright 基础版完整创作/导出/存储闭环，保存 report/失败 trace 7 天。高级功能随增量扩展回归。
 - **CI required**：无论依赖成功/失败均执行，只有前两项均成功才通过；供 branch protection 作为统一必需检查。
 - 默认 `contents: read`，无 secrets、不使用 `pull_request_target` 执行 PR 代码。
 - Dependabot 每周检查 npm 与 Actions；PR 按同一检查要求合并。

@@ -1,5 +1,7 @@
 # 架构与模块契约
 
+> 以下包含完整MVP0的目标架构。当前可运行版本的真实代码与存档格式以 [BASELINE.md](BASELINE.md) 和 [contribute.md](../contribute.md) 为准；不要按目标类型直接覆盖已有数据。
+
 ## 目录职责
 
 | 路径                   | 职责                              | 禁止耦合                    |
@@ -28,4 +30,4 @@ Viewport 负责 renderer、controls、RAF、resize observer 和监听器。几�
 
 ## 测试门槛
 
-`vitest.config.ts` 对 `src/core/**/*.ts` 启用 100% lines/statements/functions/branches。当前 core 尚未实现，初始类型测试与浏览器冒烟只验证工程基线，不代表算法或完整流程已覆盖。新增核心模块时必须同时添加行为测试。Canvas、IndexedDB、资源释放和端到端流程由相应任务补齐。
+`vitest.config.ts` 对 `src/core/**/*.ts` 启用 100% lines/statements/functions/branches。当前 core 已实现轮廓采样和接缝/笔划操作，浏览器测试覆盖基础创作闭环；高级玩法和真机性能仍待验收。新增核心模块时必须同时添加行为测试。Canvas、IndexedDB、资源释放和端到端流程由相应任务补齐。
