@@ -1,0 +1,25 @@
+name: 开发任务
+description: 可认领、可验收的功能或工程任务
+title: '[Task] '
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标与文档依据
+      description: PRD 章节、用户场景和交付结果
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围、目录与接口
+      description: 输入输出、依赖 Issue、边界与不包含的功能
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收与测试
+      description: 使用可逐项勾选的标准，注明验证命令与手动步骤
+    validations:
+      required: true

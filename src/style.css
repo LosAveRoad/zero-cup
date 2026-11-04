@@ -1,0 +1,17 @@
+body {
+  margin: 0;
+  background: #f6f3eb;
+  color: #163957;
+  font-family: system-ui, sans-serif;
+}
+main {
+  max-width: 800px;
+  margin: 15vh auto;
+  padding: 2rem;
+}
+h1 {
+  font-size: 3rem;
+}
+a {
+  color: #215e9b;
+}

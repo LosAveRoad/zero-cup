@@ -1,0 +1,17 @@
+name: 缺陷报告
+description: 报告可复现的问题
+title: '[Bug] '
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤、实际与预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与证据
+      description: 浏览器版本、系统、显卡、截图、控制台错误；避免上传私人作品
+    validations:
+      required: true
