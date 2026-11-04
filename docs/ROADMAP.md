@@ -17,10 +17,28 @@ Issue 为可执行任务源；PR 中用 `Closes #编号` 关联，依赖关系�
 - [x] 读取 PRD、确认空仓库；保留仓库名称与公开状态。
 - [x] 添加 React18/TS/Vite 工程、公共契约、测试运行器和开发规范。
 - [x] 添加 PR 工作流、模板、Dependabot。
-- [ ] GitHub Actions 实跑、记录最终结果。
-- [ ] 创建分模块 Issue 并核对依赖。
+- [x] GitHub Actions 实跑：Quality、Browser smoke、CI required 均通过；PR 触发路径已实测。
+- [x] 创建 13 个分模块/协作 Issue，写明依赖与验收；总入口 [#1](https://github.com/LosAveRoad/zero-cup/issues/1)。
 - [ ] 管理员启用主分支规则（连接不提供设置写接口）。
 
 ## 完成定义
 
 各任务通过单元/集成检查后，最终验收还必须覆盖：拉坯→彩绘→烧制→1080 PNG→归档→刷新恢复→删除；跨缝无拉线、超过 20 次操作不丢画面、存储配额失败可恢复；Chrome/Edge 真机性能和资源释放实测。任务清单全关闭之前不宣称 MVP0 完成。
+
+## 可认领任务
+
+- [[M0][P0] Three.js Viewport 与资源生命周期](https://github.com/LosAveRoad/zero-cup/issues/10)
+- [[M0][P0] 首页、创作阶段状态与导航守卫](https://github.com/LosAveRoad/zero-cup/issues/11)
+- [[M1][P0] 轮廓约束、样条采样与 LatheGeometry](https://github.com/LosAveRoad/zero-cup/issues/12)
+- [[M1][P0] 二维控制点编辑器与实时拉坯工作台](https://github.com/LosAveRoad/zero-cup/issues/13)
+- [[M2][P0] CanvasTexture、Raycaster UV 与跨接缝绘制](https://github.com/LosAveRoad/zero-cup/issues/14)
+- [[M2][P0] 20 步撤销重做与完整作品恢复策略](https://github.com/LosAveRoad/zero-cup/issues/15)
+- [[M2][P0] 彩绘工具工作台与三款授权纹样](https://github.com/LosAveRoad/zero-cup/issues/16)
+- [[M3][P0] 素坯与釉面 PBR 配方及烧制转场](https://github.com/LosAveRoad/zero-cup/issues/17)
+- [[M3][P0] 成品机位、调光与 1080×1080 PNG 导出](https://github.com/LosAveRoad/zero-cup/issues/18)
+- [[M4][P0] IndexedDB 存档、恢复、画廊与错误处理](https://github.com/LosAveRoad/zero-cup/issues/19)
+- [[M4][P0] 三套器型挑战、轮廓评分与目标剪影](https://github.com/LosAveRoad/zero-cup/issues/20)
+- [[M4][P0] 完整闭环 E2E、资源与性能验收](https://github.com/LosAveRoad/zero-cup/issues/21)
+- [[协作配置] 启用 main 必需检查与团队写权限](https://github.com/LosAveRoad/zero-cup/issues/22)
+
+初始化检查证据：[首次 main 流水线](https://github.com/LosAveRoad/zero-cup/actions/runs/41855602292)，[PR 流水线样例](https://github.com/LosAveRoad/zero-cup/actions/runs/41855936004)。不兼容的依赖升级 PR 会失败，应修复或保留当前锁定版本，不自动合并。
