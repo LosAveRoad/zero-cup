@@ -35,7 +35,9 @@ npm run dev
 3. 在 [Issue 列表](https://github.com/LosAveRoad/zero-cup/issues) 认领一个依赖已满足的任务，按 [协作指南](CONTRIBUTING.md) 开发。
 4. PR 填写 `Closes #编号` 和验收证据，检查通过后由另一成员审阅。
 
-[任务路线图](docs/ROADMAP.md) · [CI 与分支保护](docs/CI.md)
+[任务路线图](docs/ROADMAP.md) · [CI 与分支保护](docs/CI.md) · [部署到 Cloudflare Pages](docs/DEPLOY.md)
+
+线上演示：<https://porcelain-tales.pages.dev/>
 
 ## 技术与范围
 
