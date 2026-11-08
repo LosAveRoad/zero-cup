@@ -36,6 +36,12 @@ import type {
 const TEXTURE = 2048;
 /** The ceramic body colour, painted under the pattern layer. */
 const BASE_COLOUR = '#faf7ef';
+/**
+ * The eraser is a little wider than the brush at the same setting, so that
+ * dragging it across a stroke really removes it: a brush of the same width
+ * leaves the antialiased fringe of the stroke behind.
+ */
+const ERASER_MARGIN = 10;
 const TAU = Math.PI * 2;
 
 export interface StudioOptions {
@@ -295,7 +301,7 @@ export function createStudio(host: HTMLDivElement) {
       scratchCtx.globalCompositeOperation = 'destination-out';
       scratchCtx.strokeStyle = '#000000';
       scratchCtx.fillStyle = '#000000';
-      strokePath(scratchCtx, draft.path, draft.size);
+      strokePath(scratchCtx, draft.path, draft.size + ERASER_MARGIN);
       scratchCtx.globalCompositeOperation = 'source-over';
       ctx.drawImage(scratchCanvas, 0, 0);
     } else {
@@ -321,7 +327,7 @@ export function createStudio(host: HTMLDivElement) {
     if (!draft) return;
     const action =
       draft.type === 'ERASE'
-        ? eraseAction(draft.path, draft.size)
+        ? eraseAction(draft.path, draft.size + ERASER_MARGIN)
         : brushAction(draft.path, {
             size: draft.size,
             color: draft.color,

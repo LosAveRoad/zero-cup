@@ -20,7 +20,9 @@ UI State → Three Scene → Canvas/UV Engine；Storage 保存可序列化的数
 
 `ProfileControlPoint` 的高度和半径都归一化；uv 的 v 原点在底部，Canvas 像素 y 在顶部：`x=u*2048; y=(1-v)*2048`。网格采样后也要重新检查半径和高度单调性，防止样条过冲，不能仅 clamp 控制点。
 
-`PaintingAction.size` 使用纹理像素，stamp `rotation` 用弧度、`scale` 相对原图尺寸，`opacity` 在 [0,1]。这些单位是仓库初始约定，改动需同步所有消费者。纹理透明底和陶瓷底色分离，橡皮擦只擦纹样。
+`PaintingAction.size` 使用纹理像素，stamp `rotation` 用弧度、`scale` 相对原图尺寸，`opacity` 在 [0,1]。这些单位是仓库初始约定，改动需同步所有消费者。纹理透明底和陶瓷底色分离，橡皮擦只擦纹样——渲染器因此持有**底色层、墨迹层和一张擦除预览用副本**三张 2048 画布，释放时都要处理。
+
+采样得到的 u 是**连续量**，跨接缝时可以越出 [0,1]（例如 0.98 → 1.04）。这是有意表示接缝穿越，不要再 clamp 回 [0,1]，否则会重新引入贯穿贴图的长线。
 
 `ArtworkMetadata.snapshotBlob` 保存 2048×2048 彩绘纹理，`thumbnailBlob` 用于画廊。相片为 1080×1080 另行导出。若添加 schemaVersion 或新字段，先定义向后兼容读取与迁移测试。完整记录与基线快照的取舍见历史 Issue；不能只保存最近 20 次命令造成作品丢失。
 
@@ -30,4 +32,4 @@ Viewport 负责 renderer、controls、RAF、resize observer 和监听器。几�
 
 ## 测试门槛
 
-`vitest.config.ts` 对 `src/core/**/*.ts` 启用 100% lines/statements/functions/branches。当前 core 已实现轮廓采样和接缝/笔划操作，浏览器测试覆盖基础创作闭环；高级玩法和真机性能仍待验收。新增核心模块时必须同时添加行为测试。Canvas、IndexedDB、资源释放和端到端流程由相应任务补齐。
+`vitest.config.ts` 对 `src/core/**/*.ts` 启用 100% lines/statements/functions/branches。当前 core 已实现轮廓采样与单调样条、方位角接缝、命令与历史、印章几何、釉料与光照、机位与排版、挑战评分、作品库版本与迁移；浏览器测试覆盖创作闭环与各项工具行为。新增核心模块时必须同时添加行为测试。Canvas、IndexedDB、资源释放和端到端流程由相应任务补齐。

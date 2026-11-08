@@ -3,7 +3,10 @@ export default defineConfig({
   testDir: './tests/e2e',
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Software rendering is CPU bound: more workers than this starve the
+  // browser and turn slow assertions into timeouts.
+  workers: process.env.CI ? 1 : 2,
+  timeout: 60_000,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:4173',

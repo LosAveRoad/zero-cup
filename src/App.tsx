@@ -234,7 +234,9 @@ export function App() {
     });
     setName(artwork.name);
     setChallengeId(
-      (artwork.challengeId as ChallengeId | undefined) ?? undefined,
+      artwork.challengeId && getChallenge(artwork.challengeId)
+        ? (artwork.challengeId as ChallengeId)
+        : undefined,
     );
     setStage('exhibition');
     setGlaze(1);
