@@ -8,6 +8,7 @@ import {
 import { createStudio, type StudioOptions } from './studio-renderer';
 export interface ViewportHandle {
   snapshot(name: string): Promise<Blob>;
+  texture(): Promise<Blob>;
 }
 export const Viewport = forwardRef<ViewportHandle, StudioOptions>(
   function Viewport(options, ref) {
@@ -34,6 +35,10 @@ export const Viewport = forwardRef<ViewportHandle, StudioOptions>(
         snapshot: async (name) => {
           if (!studio.current) throw new Error('三维视口尚未就绪');
           return studio.current.snapshot(name);
+        },
+        texture: async () => {
+          if (!studio.current) throw new Error('三维视口尚未就绪');
+          return studio.current.texture();
         },
       }),
       [],

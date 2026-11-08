@@ -17,7 +17,7 @@ const STAGE_LABELS: Record<FiringPanelProps['stage'], string> = {
 };
 
 const STAGE_HINTS: Record<FiringPanelProps['stage'], string> = {
-  bisque: '坯体入窑，窑火正盛。',
+  bisque: '坯体入窑，窑温正升。',
   rising: '窑温攀升，坯体由灰转白。',
   glazing: '釉料熔融，青花由灰蓝转钴蓝。',
   complete: '出窑。釉面平润，可以拍照了。',
