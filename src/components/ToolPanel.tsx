@@ -4,9 +4,10 @@ import {
   STAMP_SCALE_RANGE,
   type StampAssetId,
 } from '../core/painting/stamps';
+import type { PaintTool } from '../types/artwork';
 
 /** The painting tools that can be active at the same time. */
-export type ToolId = 'brush' | 'eraser' | 'stamp';
+export type ToolId = PaintTool;
 
 export interface ToolPanelProps {
   tool: ToolId;

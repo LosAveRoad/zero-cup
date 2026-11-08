@@ -8,6 +8,9 @@ export interface UVPoint {
   u: number;
   v: number;
 }
+
+/** The mutually exclusive painting tools of the studio. */
+export type PaintTool = 'brush' | 'eraser' | 'stamp';
 export type PaintingAction =
   | {
       type: 'BRUSH';

@@ -10,14 +10,17 @@ export interface FiringPanelProps {
 }
 
 const STAGE_LABELS: Record<FiringPanelProps['stage'], string> = {
-  bisque: '窑火正盛',
+  bisque: '素坯入窑',
   rising: '升温',
   glazing: '挂釉',
-  complete: '完成',
+  complete: '出窑',
 };
 
+/** The kiln blazes for the whole firing, so this heading never changes. */
+const HEADING = '窑火正盛';
+
 const STAGE_HINTS: Record<FiringPanelProps['stage'], string> = {
-  bisque: '坯体入窑，窑火正盛。',
+  bisque: '坯体入窑，窑温正升。',
   rising: '窑温攀升，坯体由灰转白。',
   glazing: '釉料熔融，青花由灰蓝转钴蓝。',
   complete: '出窑。釉面平润，可以拍照了。',
@@ -68,7 +71,8 @@ export function FiringPanel({
   return (
     <div className="firing firing-panel">
       <span aria-hidden="true">◉</span>
-      <h3>{label}</h3>
+      <h3>{HEADING}</h3>
+      <p className="firing-stage">{label}</p>
       <p>{STAGE_HINTS[stage]}</p>
       <div
         className="firing-progress"
