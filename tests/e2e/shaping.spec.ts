@@ -20,6 +20,49 @@ interface CanvasSample {
   y: number;
 }
 
+/**
+ * Counts the pixels of the vessel (and its pedestal) in the WebGL canvas.
+ *
+ * The renderer runs without `preserveDrawingBuffer`, so the canvas can only
+ * be read inside a requestAnimationFrame callback, after it has drawn a
+ * frame. The stage background is a flat #e9e6de; the vessel is clearly
+ * different from it.
+ */
+async function vesselPixels(page: Page): Promise<number> {
+  return await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let frames = 0;
+        const tick = () => {
+          if (++frames < 8) {
+            requestAnimationFrame(tick);
+            return;
+          }
+          const el = document.querySelector(
+            'canvas[aria-label="三维陶器画布"]',
+          ) as HTMLCanvasElement;
+          const copy = document.createElement('canvas');
+          copy.width = el.width;
+          copy.height = el.height;
+          const ctx = copy.getContext('2d')!;
+          ctx.drawImage(el, 0, 0);
+          const { data } = ctx.getImageData(0, 0, el.width, el.height);
+          let count = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            if (
+              Math.abs(data[i] - 233) > 6 ||
+              Math.abs(data[i + 1] - 230) > 6 ||
+              Math.abs(data[i + 2] - 222) > 6
+            )
+              count += 1;
+          }
+          resolve(count);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
 /** Every control point of the outline editor, read from the DOM. */
 async function readControlPoints(page: Page): Promise<ControlPoint[]> {
   return page.$$eval('[data-testid^="profile-point-"]', (elements) =>
@@ -246,32 +289,48 @@ async function expectOutlineInsideNeighbourBracket(
   }
 }
 
-/** Distinct colours of the 3D canvas, to prove the vessel is still drawn. */ async function readCanvasColours(
+/** Distinct colours of the 3D canvas, to prove the vessel is still drawn. */
+async function readCanvasColours(
   page: Page,
 ): Promise<{ total: number; corner: number }> {
-  const png = await page.getByLabel('三维陶器画布').screenshot();
-  return page.evaluate(async (base64: string) => {
-    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-    const bitmap = await createImageBitmap(
-      new Blob([bytes], { type: 'image/png' }),
-    );
-    const surface = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const context = surface.getContext('2d');
-    if (!context) return { total: 0, corner: 0 };
-    context.drawImage(bitmap, 0, 0);
-    const count = (x: number, y: number, width: number, height: number) => {
-      const { data } = context.getImageData(x, y, width, height);
-      const seen = new Set<number>();
-      for (let i = 0; i < data.length; i += 4) {
-        seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-      }
-      return seen.size;
-    };
-    return {
-      total: count(0, 0, bitmap.width, bitmap.height),
-      corner: count(0, 0, 40, 40),
-    };
-  }, png.toString('base64'));
+  return await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let frames = 0;
+        const tick = () => {
+          if (++frames < 8) {
+            requestAnimationFrame(tick);
+            return;
+          }
+          const el = document.querySelector(
+            'canvas[aria-label="三维陶器画布"]',
+          ) as HTMLCanvasElement;
+          const copy = document.createElement('canvas');
+          copy.width = el.width;
+          copy.height = el.height;
+          const ctx = copy.getContext('2d')!;
+          ctx.drawImage(el, 0, 0);
+          const count = (
+            x: number,
+            y: number,
+            width: number,
+            height: number,
+          ) => {
+            const { data } = ctx.getImageData(x, y, width, height);
+            const seen = new Set<number>();
+            for (let i = 0; i < data.length; i += 4) {
+              seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
+            }
+            return seen.size;
+          };
+          resolve({
+            total: count(0, 0, copy.width, copy.height),
+            corner: count(0, 0, 40, 40),
+          });
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
 }
 
 test.describe('outline editor: dragging control points', () => {
@@ -290,7 +349,10 @@ test.describe('outline editor: dragging control points', () => {
     const outlineBefore = await page
       .getByTestId('profile-outline')
       .getAttribute('d');
-    const canvasBefore = await page.getByLabel('三维陶器画布').screenshot();
+    // Wait until the scene has actually been drawn, so the baseline below is
+    // the vessel and not an empty canvas.
+    await expect.poll(() => vesselPixels(page)).toBeGreaterThan(0);
+    const vesselBefore = await vesselPixels(page);
 
     await dragPointBy(page, 'profile-point-3', 30, -12);
 
@@ -313,15 +375,13 @@ test.describe('outline editor: dragging control points', () => {
     );
     expect(await readOutlineSamples(page)).toHaveLength(SPLINE_SEGMENTS + 1);
 
-    // The 3D model is rebuilt from the new profile.
+    // The 3D model is rebuilt from the new profile: the vessel gets wider, so
+    // it covers more pixels. (An element screenshot of the WebGL canvas is
+    // not used here: on a software-rendered CI runner it can come back
+    // byte-identical even though the scene changed.)
     await expect
-      .poll(async () =>
-        Buffer.compare(
-          await page.getByLabel('三维陶器画布').screenshot(),
-          canvasBefore,
-        ),
-      )
-      .not.toBe(0);
+      .poll(() => vesselPixels(page), { timeout: 15_000 })
+      .toBeGreaterThan(vesselBefore);
     expect(await page.getByRole('alert').count()).toBe(0);
     expect(errors).toEqual([]);
   });
