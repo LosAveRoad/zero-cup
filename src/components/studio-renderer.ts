@@ -9,6 +9,7 @@ import {
 import {
   azimuthToU,
   drawOffsets,
+  extendPath,
   splitSegment,
   unwrapTheta,
 } from '../core/painting/strokes';
@@ -409,7 +410,9 @@ export function createStudio(host: HTMLDivElement) {
         : lastU + (theta - (lastTheta as number)) / TAU;
     lastTheta = theta;
     lastU = u;
-    draft.path.push({ u, v: hitPoint.v });
+    // extendPath keeps the sample continuous with the previous one and drops
+    // points that are too close, so a slow drag does not bloat the command.
+    draft.path = extendPath(draft.path, { u, v: hitPoint.v });
     scheduleRepaint();
   }
 
