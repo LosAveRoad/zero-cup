@@ -154,7 +154,9 @@ select {
 }
 .scene {
   position: relative;
+  height: 78vh;
   min-height: 540px;
+  align-self: start;
   background: #e9e6de;
 }
 .viewport {
@@ -328,6 +330,10 @@ footer {
 .firing-panel {
   width: 100%;
 }
+.firing-stage {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
 .fire-overlay {
   position: absolute;
   inset: 0;
@@ -351,6 +357,7 @@ footer {
     padding: 18px;
   }
   .scene {
+    height: 70vh;
     min-height: 480px;
   }
   nav span {
@@ -365,6 +372,7 @@ footer {
     grid-template-columns: 1fr;
   }
   .scene {
+    height: 60vh;
     min-height: 400px;
     grid-row: 1;
   }
