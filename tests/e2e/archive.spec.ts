@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { PaintingAction } from '../../src/types/artwork';
 
 const DATABASE_NAME = 'porcelain-tales-studio';
 const OBJECT_STORE_NAME = 'artworks';
@@ -29,6 +30,7 @@ interface StoredRecordSummary {
   strokes: unknown;
   actions: unknown;
   imageSize: number;
+  textureHash: string | null;
 }
 
 /** 与 `src/core/geometry/profile.ts` 的默认器型一致（8 个截面点）。 */
@@ -136,21 +138,37 @@ async function readRecords(page: Page): Promise<StoredRecordSummary[]> {
         }),
       ]);
       db.close();
-      return values.map((value, index) => {
-        const record = (value ?? {}) as Record<string, unknown>;
-        const image = record.image;
-        return {
-          key: String(keys[index]),
-          version: record.version ?? null,
-          name: record.name ?? null,
-          createdAt: record.createdAt ?? null,
-          updatedAt: record.updatedAt ?? null,
-          profile: record.profile ?? null,
-          strokes: record.strokes ?? null,
-          actions: record.actions ?? null,
-          imageSize: image instanceof Blob ? image.size : -1,
-        };
-      });
+      return Promise.all(
+        values.map(async (value, index) => {
+          const record = (value ?? {}) as Record<string, unknown>;
+          const image = record.image;
+          const texture = record.texture;
+          const textureHash =
+            texture instanceof Blob
+              ? Array.from(
+                  new Uint8Array(
+                    await crypto.subtle.digest(
+                      'SHA-256',
+                      await texture.arrayBuffer(),
+                    ),
+                  ),
+                  (byte) => byte.toString(16).padStart(2, '0'),
+                ).join('')
+              : null;
+          return {
+            key: String(keys[index]),
+            version: record.version ?? null,
+            name: record.name ?? null,
+            createdAt: record.createdAt ?? null,
+            updatedAt: record.updatedAt ?? null,
+            profile: record.profile ?? null,
+            strokes: record.strokes ?? null,
+            actions: record.actions ?? null,
+            imageSize: image instanceof Blob ? image.size : -1,
+            textureHash,
+          };
+        }),
+      );
     },
     { databaseName: DATABASE_NAME, storeName: OBJECT_STORE_NAME },
   );
@@ -489,4 +507,70 @@ test.describe('存储失败的可见性', () => {
     ).toBeVisible();
     expect(errors).toEqual([]);
   });
+});
+
+test('24 mixed actions survive reload and the full undo window without losing the texture', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await resetDatabase(page);
+  await page.getByLabel('截面 4 半径').fill('0.72');
+  await page.getByRole('button', { name: '定型进入彩绘' }).click();
+
+  const tools = ['画笔', '印章', '橡皮擦'] as const;
+  for (let index = 0; index < 24; index++) {
+    await page
+      .getByRole('button', { name: tools[index % 3], exact: true })
+      .click();
+    await drawStroke(page, index % 2 === 0 ? 1 : -1);
+    await expect(
+      page.getByText(`已落笔 ${index + 1} 次`, { exact: false }),
+    ).toBeVisible();
+  }
+  await page.getByRole('button', { name: '入窑烧制' }).click();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await page.getByLabel('作品名称').fill('24次混合操作');
+  await page.getByRole('button', { name: '保存到藏品' }).click();
+  await expect(page.getByRole('status')).toContainText('作品已保存');
+  const [before] = await readRecords(page);
+  const actions = before.actions as PaintingAction[];
+  expect(actions).toHaveLength(24);
+  expect(actions.map((action) => action.type)).toEqual(
+    Array.from(
+      { length: 24 },
+      (_, index) => ['BRUSH', 'STAMP', 'ERASE'][index % 3],
+    ),
+  );
+  expect(before.textureHash).toMatch(/^[0-9a-f]{64}$/);
+
+  await page.reload();
+  page.on('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: '打开作品' }).click();
+  await expect(page.getByLabel('作品名称')).toHaveValue('24次混合操作');
+  await page.getByRole('button', { name: '继续彩绘' }).click();
+  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
+  const undo = page.getByRole('button', { name: '撤销', exact: true });
+  const redo = page.getByRole('button', { name: '重做', exact: true });
+  for (let index = 0; index < 20; index++) await undo.click();
+  await expect(page.getByText('已落笔 4 次', { exact: false })).toBeVisible();
+  await expect(undo).toBeDisabled();
+  for (let index = 0; index < 20; index++) await redo.click();
+  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
+  await expect(redo).toBeDisabled();
+
+  await page.getByRole('button', { name: '入窑烧制' }).click();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await page.getByRole('button', { name: '保存到藏品' }).click();
+  await expect(page.getByRole('status')).toContainText('作品已保存');
+  const records = await readRecords(page);
+  expect(records).toHaveLength(1);
+  expect(records[0].key).toBe(before.key);
+  expect(records[0].actions).toEqual(actions);
+  expect(records[0].profile).toEqual(before.profile);
+  // The renderer replays all three tools after opening and undo/redo.
+  // Matching the actual exported texture catches visual loss beyond action counts.
+  expect(records[0].textureHash).toBe(before.textureHash);
+  expect(errors).toEqual([]);
 });
