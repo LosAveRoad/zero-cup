@@ -143,18 +143,27 @@ async function readRecords(page: Page): Promise<StoredRecordSummary[]> {
           const record = (value ?? {}) as Record<string, unknown>;
           const image = record.image;
           const texture = record.texture;
-          const textureHash =
-            texture instanceof Blob
-              ? Array.from(
-                  new Uint8Array(
-                    await crypto.subtle.digest(
-                      'SHA-256',
-                      await texture.arrayBuffer(),
-                    ),
-                  ),
-                  (byte) => byte.toString(16).padStart(2, '0'),
-                ).join('')
-              : null;
+          let textureHash: string | null = null;
+          if (texture instanceof Blob) {
+            // Compare decoded pixels, not PNG encoder output/metadata.
+            const bitmap = await createImageBitmap(texture);
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext('2d')!;
+            context.drawImage(bitmap, 0, 0);
+            bitmap.close();
+            const pixels = context.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            ).data;
+            textureHash = Array.from(
+              new Uint8Array(await crypto.subtle.digest('SHA-256', pixels)),
+              (byte) => byte.toString(16).padStart(2, '0'),
+            ).join('');
+          }
           return {
             key: String(keys[index]),
             version: record.version ?? null,
@@ -511,7 +520,7 @@ test.describe('存储失败的可见性', () => {
 
 test('24 mixed actions survive reload and the full undo window without losing the texture', async ({
   page,
-}) => {
+}, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -534,6 +543,29 @@ test('24 mixed actions survive reload and the full undo window without losing th
   await page.getByLabel('作品名称').fill('24次混合操作');
   await page.getByRole('button', { name: '保存到藏品' }).click();
   await expect(page.getByRole('status')).toContainText('作品已保存');
+  const attachTexture = async (name: string) => {
+    const bytes = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('porcelain-tales-studio');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const texture = await new Promise<Blob>((resolve, reject) => {
+        const request = db
+          .transaction('artworks')
+          .objectStore('artworks')
+          .getAll();
+        request.onsuccess = () => resolve(request.result[0].texture);
+        request.onerror = () => reject(request.error);
+      }).finally(() => db.close());
+      return Array.from(new Uint8Array(await texture.arrayBuffer()));
+    });
+    await testInfo.attach(name, {
+      body: Buffer.from(bytes),
+      contentType: 'image/png',
+    });
+  };
+  await attachTexture('texture-before-reload');
   const [before] = await readRecords(page);
   const actions = before.actions as PaintingAction[];
   expect(actions).toHaveLength(24);
@@ -571,6 +603,7 @@ test('24 mixed actions survive reload and the full undo window without losing th
   expect(records[0].profile).toEqual(before.profile);
   // The renderer replays all three tools after opening and undo/redo.
   // Matching the actual exported texture catches visual loss beyond action counts.
+  await attachTexture('texture-after-replay');
   expect(records[0].textureHash).toBe(before.textureHash);
   expect(errors).toEqual([]);
 });
