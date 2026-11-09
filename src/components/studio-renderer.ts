@@ -33,7 +33,7 @@ import {
   rigAt,
   type LightingPresetId,
 } from '../core/materials/lighting';
-import { inkOpacityFor } from './ToolPanel';
+import { inkOpacityFor } from '../core/painting/inks';
 import {
   layoutFor,
   poseFor,
@@ -221,6 +221,9 @@ export function createStudio(host: HTMLDivElement) {
   let cursorSignature = '';
   let draft: Draft | undefined;
   let pointerId: number | undefined;
+  /** A left-button press on the finished vessel, promoted to a strike on release. */
+  let tapStart:
+    { x: number; y: number; hit: { u: number; v: number } } | undefined;
   /** The unwrapped azimuth of the last hit, used to keep u continuous. */
   let lastTheta: number | undefined;
   /** The continuous u of the last hit; it may leave [0,1] across the seam. */
@@ -900,25 +903,14 @@ export function createStudio(host: HTMLDivElement) {
             'transform',
             `translate(${localX.toFixed(1)}, ${localY.toFixed(1)})`,
           );
-          const noteLabel = options.onTapVessel?.({
-            u: hitPoint.u,
-            v: hitPoint.v,
-          });
-          triggerRodStrike(
-            localX,
-            localY,
-            typeof noteLabel === 'string' ? noteLabel : undefined,
-          );
+          // Strike on release, not on press: dragging to orbit also starts with
+          // a left-button press and must not ring the vessel.
+          tapStart = { x: localX, y: localY, hit: hitPoint };
         }
       }
       return;
     }
-    if (event.button === 2) {
-      rightOrbiting = true;
-      controls.enabled = true;
-      hideCursor();
-      return;
-    }
+    if (event.button === 2) return;
     if (event.button !== 0) return;
     if (pointerId !== undefined) return;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -1045,12 +1037,51 @@ export function createStudio(host: HTMLDivElement) {
     scheduleRepaint();
   }
 
-  const up = () => finish();
-  const cancel = () => finish(true);
+  /** Pointer travel (CSS px) under which a press on the vessel counts as a tap. */
+  const TAP_SLOP = 5;
+
+  const up = (event: PointerEvent) => {
+    const tap = tapStart;
+    tapStart = undefined;
+    if (tap && options && options.glaze >= 1 && !options.painting) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const dx = event.clientX - rect.left - tap.x;
+      const dy = event.clientY - rect.top - tap.y;
+      if (Math.hypot(dx, dy) <= TAP_SLOP) {
+        const noteLabel = options.onTapVessel?.({
+          u: tap.hit.u,
+          v: tap.hit.v,
+        });
+        triggerRodStrike(
+          tap.x,
+          tap.y,
+          typeof noteLabel === 'string' ? noteLabel : undefined,
+        );
+      }
+    }
+    finish();
+  };
+  const cancel = () => {
+    tapStart = undefined;
+    finish(true);
+  };
   const leave = () => hideCursor();
   const suppressContextMenu = (event: MouseEvent) => {
     if (options?.painting) event.preventDefault();
   };
+  /**
+   * OrbitControls ignores a pointerdown it receives while `enabled` is false, so
+   * enabling orbiting from the canvas listener would be too late to start the
+   * gesture. Capture on the host runs before the canvas listeners the controls
+   * own, which lets a painting-stage right-drag orbit as the hint promises.
+   */
+  const startRightOrbit = (event: PointerEvent) => {
+    if (!options?.painting || event.button !== 2) return;
+    rightOrbiting = true;
+    controls.enabled = true;
+    hideCursor();
+  };
+  host.addEventListener('pointerdown', startRightOrbit, { capture: true });
   renderer.domElement.addEventListener('pointerdown', down);
   renderer.domElement.addEventListener('pointermove', move);
   renderer.domElement.addEventListener('pointerup', up);
@@ -1285,6 +1316,9 @@ export function createStudio(host: HTMLDivElement) {
       window.clearTimeout(strikeResetTimer);
       observer.disconnect();
       controls.dispose();
+      host.removeEventListener('pointerdown', startRightOrbit, {
+        capture: true,
+      });
       renderer.domElement.removeEventListener('pointerdown', down);
       renderer.domElement.removeEventListener('pointermove', move);
       renderer.domElement.removeEventListener('pointerup', up);

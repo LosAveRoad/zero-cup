@@ -1373,3 +1373,22 @@ button.scroll-seal:active:not(:disabled) {
     font-size: 9px;
   }
 }
+
+/* 尊重系统的「减少动态效果」设置：装饰动画全部停掉，卷轴直接开合。 */
+@media (prefers-reduced-motion: reduce) {
+  .firing-beacon,
+  .ember,
+  .mote,
+  .scroll-cloud,
+  .kiln-flame-base,
+  button.scroll-seal {
+    animation: none !important;
+  }
+  .scroll-leaf,
+  .scroll-centerpiece {
+    transition-duration: 0.01ms;
+  }
+  .scroll-prologue.is-open {
+    transition: visibility 0s linear 0s;
+  }
+}
