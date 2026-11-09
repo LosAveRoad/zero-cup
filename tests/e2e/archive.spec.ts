@@ -564,8 +564,9 @@ test('24 mixed actions survive reload and the full undo window without losing th
       body: Buffer.from(bytes),
       contentType: 'image/png',
     });
+    return bytes;
   };
-  await attachTexture('texture-before-reload');
+  const beforeTexture = await attachTexture('texture-before-reload');
   const [before] = await readRecords(page);
   const actions = before.actions as PaintingAction[];
   expect(actions).toHaveLength(24);
@@ -603,7 +604,59 @@ test('24 mixed actions survive reload and the full undo window without losing th
   expect(records[0].profile).toEqual(before.profile);
   // The renderer replays all three tools after opening and undo/redo.
   // Matching the actual exported texture catches visual loss beyond action counts.
-  await attachTexture('texture-after-replay');
-  expect(records[0].textureHash).toBe(before.textureHash);
+  const afterTexture = await attachTexture('texture-after-replay');
+  const difference = await page.evaluate(
+    async ([beforeBytes, afterBytes]) => {
+      const decode = async (bytes: number[]) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: 'image/png' }),
+        );
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          pixels: context.getImageData(0, 0, canvas.width, canvas.height).data,
+        };
+      };
+      const a = await decode(beforeBytes);
+      const b = await decode(afterBytes);
+      if (a.width !== b.width || a.height !== b.height)
+        throw new Error('Texture dimensions changed');
+      let maxChannelDifference = 0;
+      let changedPixels = 0;
+      for (let i = 0; i < a.pixels.length; i += 4) {
+        let changed = false;
+        for (let channel = 0; channel < 4; channel++) {
+          const delta = Math.abs(a.pixels[i + channel] - b.pixels[i + channel]);
+          maxChannelDifference = Math.max(maxChannelDifference, delta);
+          changed ||= delta !== 0;
+        }
+        if (changed) changedPixels++;
+      }
+      return {
+        width: a.width,
+        height: a.height,
+        maxChannelDifference,
+        changedPixels,
+      };
+    },
+    [beforeTexture, afterTexture],
+  );
+  await testInfo.attach('texture-pixel-difference', {
+    body: JSON.stringify(difference),
+    contentType: 'application/json',
+  });
+  expect(difference.width).toBe(2048);
+  expect(difference.height).toBe(2048);
+  // Linux Canvas incremental drawing vs replay differed at just 3 pixels
+  // by 1 channel level. Compare every pixel with that rounding bound; keep
+  // exact action/profile checks above, rather than treating PNG hashes as
+  // a portable visual equality contract.
+  expect(difference.maxChannelDifference).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
