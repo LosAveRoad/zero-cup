@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-访问终端显示的地址。当前版本能够：二维轮廓点拖动与滑块拉坯 → 3D 表面画笔/橡皮擦/印章 → 撤销/重做 → 2.5 秒连续烧制 → 1080 PNG（含机位与排版）→ IndexedDB 保存 → 刷新后打开/删除。
+访问终端显示的地址（首屏卷轴序幕可点「造物」进入；自动化用 `?prologue=skip`，不要依赖 `navigator.webdriver` 之类的浏览器内部状态）。当前版本能够：二维轮廓点拖动与滑块拉坯 → 3D 表面画笔/橡皮擦/印章 → 撤销/重做 → 2.5 秒连续烧制 → 1080 PNG（含机位与排版）→ IndexedDB 保存 → 刷新后打开/删除。
 
 目前使用受约束单调样条、画笔/橡皮擦/印章三档工具、程序化纹样、连续烧制材质与光照、四个推荐机位和带迁移的作品库。二维轮廓点拖动、平滑样条、印章、橡皮擦、挑战、精细材质和高级机位已于 2026-11 合并进 main，见 [BASELINE.md](docs/BASELINE.md) 的实际状态。不要把当前版本描述为完整 MVP0。
 
@@ -32,29 +32,33 @@ AI 不应只报告“代码已写好”“理论上可运行”。如果某项�
 
 ## 3. 当前真实代码地图
 
-| 文件                                | 作用                                                    | 修改时的注意点                                                                         |
-| ----------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `src/App.tsx`                       | 创作阶段、工具状态、历史游标、保存/打开交互             | 保持四阶段和当前作品一致，避免异步保存覆盖新作品                                       |
-| `src/components/Viewport.tsx`       | React 生命周期与 snapshot/texture 引用                  | StrictMode 下挂载/卸载可重复，必须清理                                                 |
-| `src/components/studio-renderer.ts` | Three 场景、OrbitControls、UV 拾取、墨层/底色分层、截图 | 一个视口一个 renderer；替换 geometry 先 dispose；旋转/绘制互斥；三个 2048 画布都要释放 |
-| `src/components/ProfileEditor.tsx`  | 二维轮廓 SVG 编辑器、器型模板                           | 拖动要夹紧半径、保持高度升序；控制点带 `data-testid` 供 E2E 定位                       |
-| `src/components/ToolPanel.tsx`      | 画笔/橡皮擦/印章三档工具、缩放与旋转                    | 缩放/旋转只作用于下一枚印章，落印后由 App 复位                                         |
-| `src/components/FiringPanel.tsx`    | 窑温阶段文案与进度条                                    | 标题「窑火正盛」在整个烧制期常驻，是基线 E2E 的定位锚点                                |
-| `src/components/CameraPanel.tsx`    | 正视/俯仰30°/特写/自由旋转                              | 只上报选择，机位由渲染器拥有                                                           |
-| `src/components/ChallengePanel.tsx` | 三种器型挑战、目标剪影预览与分数                        | 分数由轮廓实时计算，不得缓存过期值                                                     |
-| `src/core/geometry/profile.ts`      | 八点默认器型、合法性校验、受约束单调样条、模板          | 高度 [0,1]，间距≥0.05，半径 [0.08,0.9]；样条不得过冲                                   |
-| `src/core/painting/strokes.ts`      | 方位角连续化、UV 接缝拆分、路径合并                     | 笔刷尺寸为2048纹理像素；连续 u 可以越出 [0,1]，不要 clamp 掉                           |
-| `src/core/painting/actions.ts`      | BRUSH/ERASE/STAMP 命令契约                              | 新增动作类型必须同时接入重放、历史和存储                                               |
-| `src/core/painting/history.ts`      | 撤销/重做窗口与完整历史                                 | 撤销窗口 20 步，但历史本体永不能截断                                                   |
-| `src/core/painting/stamps.ts`       | 三款程序化矢量纹样与落印几何                            | 只描边不填充，边缘不得出现黑框；不含任何图片资产                                       |
-| `src/core/materials/glaze.ts`       | 素坯/白釉配方、窑火曲线、阶段划分                       | 烧制时长只有 `FIRING_DURATION_MS` 一个常量                                             |
-| `src/core/materials/lighting.ts`    | 素坯/成品光位与插值                                     | 纯数据，不引入 Three.js                                                                |
-| `src/core/challenges/challenges.ts` | 三种挑战目标剪影与轮廓吻合度评分                        | 评分只比较归一化半径轮廓                                                               |
-| `src/core/export/capture.ts`        | 推荐机位、1080 导出排版、日期格式                       | 导出必须是 1080×1080 PNG；标题截断、日期不截断                                         |
-| `src/storage/library.ts`            | v2 作品库：版本、校验、迁移、损坏隔离                   | `porcelain-tales-studio/artworks`；v1 只读并迁移；失败必须可见                         |
-| `src/types/artwork.ts`              | 公共数据契约                                            | 禁止直接换字段丢失已有作品；新增字段需同步存储与文档                                   |
-| `tests/e2e/smoke.spec.ts`           | 真实创作、PNG、保存、刷新恢复、删除                     | 是基础版契约，不能用只检查标题的测试替换                                               |
-| `tests/e2e/*.spec.ts`               | 工具、器型、烧制导出、存档迁移的分项回归                | 不以固定 sleep 替代条件等待；软件渲染下不写死性能预算                                  |
+| 文件                                | 作用                                                           | 修改时的注意点                                                                         |
+| ----------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `src/App.tsx`                       | 创作阶段、工具状态、历史游标、保存/打开交互                    | 保持四阶段和当前作品一致，避免异步保存覆盖新作品                                       |
+| `src/components/Viewport.tsx`       | React 生命周期与 snapshot/texture 引用                         | StrictMode 下挂载/卸载可重复，必须清理                                                 |
+| `src/components/studio-renderer.ts` | Three 场景、OrbitControls、UV 拾取、墨层/底色分层、截图        | 一个视口一个 renderer；替换 geometry 先 dispose；旋转/绘制互斥；三个 2048 画布都要释放 |
+| `src/components/ProfileEditor.tsx`  | 二维轮廓 SVG 编辑器、器型模板                                  | 拖动要夹紧半径、保持高度升序；控制点带 `data-testid` 供 E2E 定位                       |
+| `src/components/ToolPanel.tsx`      | 画笔/橡皮擦/印章三档工具、缩放与旋转、对称/弦纹/快绘、图片导入 | 缩放/旋转只作用于下一枚印章，落印后由 App 复位；轮廓提取放 `useMemo`，不进渲染路径     |
+| `src/components/sound-effects.ts`   | Web Audio 现场合成的造物声景                                   | 纯合成、无音频资产；音频上下文未解锁时静默降级，绝不抛异常                             |
+| `src/components/FiringPanel.tsx`    | 窑温阶段文案与进度条                                           | 标题「窑火正盛」在整个烧制期常驻，是基线 E2E 的定位锚点                                |
+| `src/components/CameraPanel.tsx`    | 正视/俯仰30°/特写/自由旋转                                     | 只上报选择，机位由渲染器拥有                                                           |
+| `src/components/ChallengePanel.tsx` | 三种器型挑战、目标剪影预览与分数                               | 分数由轮廓实时计算，不得缓存过期值                                                     |
+| `src/core/geometry/profile.ts`      | 八点默认器型、合法性校验、受约束单调样条、模板                 | 高度 [0,1]，间距≥0.05，半径 [0.08,0.9]；样条不得过冲                                   |
+| `src/core/painting/strokes.ts`      | 方位角连续化、UV 接缝拆分、路径合并                            | 笔刷尺寸为2048纹理像素；连续 u 可以越出 [0,1]，不要 clamp 掉                           |
+| `src/core/painting/actions.ts`      | BRUSH/ERASE/STAMP 命令契约                                     | 新增动作类型必须同时接入重放、历史和存储                                               |
+| `src/core/painting/history.ts`      | 撤销/重做窗口与完整历史                                        | 撤销窗口 20 步，但历史本体永不能截断                                                   |
+| `src/core/painting/stamps.ts`       | 三款程序化矢量纹样、`custom:` 导入纹样与落印几何               | 只描边不填充，边缘不得出现黑框；内置纹样不含任何图片资产                               |
+| `src/core/painting/contour.ts`      | 图片 → 青花轮廓：Sobel、非极大值抑制、链追踪、RDP 简化         | 输出只进 `[-1,1]` 归一化坐标；`custom:` ID 必须能无损编解码，坏输入返回空而不是抛错    |
+| `src/core/painting/inks.ts`         | 三档钴料浓淡与不透明度                                         | 渲染器与工具面板共用；渲染器不得反向依赖 UI 组件                                       |
+| `src/core/materials/glaze.ts`       | 素坯/白釉配方、窑火曲线、阶段划分                              | 烧制时长只有 `FIRING_DURATION_MS` 一个常量                                             |
+| `src/core/materials/lighting.ts`    | 素坯/成品光位与插值                                            | 纯数据，不引入 Three.js                                                                |
+| `src/core/challenges/challenges.ts` | 三种挑战目标剪影与轮廓吻合度评分                               | 评分只比较归一化半径轮廓                                                               |
+| `src/core/export/capture.ts`        | 推荐机位、1080 导出排版、日期格式                              | 导出必须是 1080×1080 PNG；标题截断、日期不截断                                         |
+| `src/storage/library.ts`            | v2 作品库：版本、校验、迁移、损坏隔离                          | `porcelain-tales-studio/artworks`；v1 只读并迁移；失败必须可见                         |
+| `src/types/artwork.ts`              | 公共数据契约                                                   | 禁止直接换字段丢失已有作品；新增字段需同步存储与文档                                   |
+| `tests/e2e/smoke.spec.ts`           | 真实创作、PNG、保存、刷新恢复、删除                            | 是基础版契约，不能用只检查标题的测试替换                                               |
+| `tests/e2e/*.spec.ts`               | 工具、器型、烧制导出、存档迁移的分项回归                       | 不以固定 sleep 替代条件等待；软件渲染下不写死性能预算                                  |
+| `tests/e2e/workshop.spec.ts`        | 对称/弦纹/快绘、右键旋转、釉彩持久化的回归                     | 用 IndexedDB 里的 2048 纹理做像素统计，不用截图肉眼判断                                |
 
 ## 4. 增量开发必须保住的行为
 

@@ -63,6 +63,12 @@ export interface StudioArtworkV1 {
   image: Blob;
 }
 
+/** Finished-glaze presets offered in the exhibition stage. */
+export type GlazeFinishId = 'white' | 'celadon' | 'crackle' | 'gilded';
+
+/** Exhibition lighting presets offered in the exhibition stage. */
+export type LightingPresetId = 'studio' | 'warm' | 'celadon';
+
 /** Schema v2 record. The only shape the app writes. */
 export interface StudioArtworkV2 {
   version: 2;
@@ -76,6 +82,10 @@ export interface StudioArtworkV2 {
   texture?: Blob;
   challengeId?: string;
   score?: number;
+  /** Finished-glaze preset; absent on records saved before it existed (white). */
+  glazeFinish?: GlazeFinishId;
+  /** Exhibition light rig; absent on records saved before it existed (studio). */
+  lightPreset?: LightingPresetId;
 }
 
 export const STUDIO_SCHEMA_VERSION = 2;

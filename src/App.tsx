@@ -130,11 +130,12 @@ export function App() {
   const [autoRotate, setAutoRotate] = useState(false);
   const [wireframe, setWireframe] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [prologueOpen, setPrologueOpen] = useState(() => {
+  // The scroll prologue greets every visit; `?prologue=skip` is the explicit
+  // opt-out used by automated checks so no test depends on browser internals.
+  const [prologueDismissed, setPrologueDismissed] = useState(() => {
     if (typeof window === 'undefined') return true;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('prologue') === '1') return false;
-    return Boolean(navigator.webdriver);
+    return params.get('prologue') === 'skip';
   });
   const [melodyTitle, setMelodyTitle] = useState(currentPorcelainMelodyTitle);
   const [glaze, setGlaze] = useState(0);
@@ -308,6 +309,8 @@ export function App() {
         texture,
         challengeId,
         score: challenge ? score : undefined,
+        glazeFinish,
+        lightPreset,
       });
       await refreshGallery();
       setNotice('作品已保存到此浏览器，刷新后仍可打开。');
@@ -336,6 +339,12 @@ export function App() {
     }
   }
   async function clearDamaged() {
+    if (
+      !window.confirm(
+        `将永久删除 ${damaged.length} 条无法读取的记录，删除后无法恢复。继续吗？`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       for (const record of damaged) {
@@ -366,14 +375,16 @@ export function App() {
     setStage('exhibition');
     setGlaze(1);
     setFiringProgress(1);
+    setGlazeFinish(artwork.glazeFinish ?? 'white');
+    setLightPreset(artwork.lightPreset ?? 'studio');
     setMelodyTitle(resetPorcelainMelody());
     setNotice('已恢复器型与完整彩绘。');
   }
   return (
     <div className="app">
       <div
-        className={`scroll-prologue ${prologueOpen ? 'is-open' : ''}`}
-        aria-hidden={prologueOpen}
+        className={`scroll-prologue ${prologueDismissed ? 'is-open' : ''}`}
+        aria-hidden={prologueDismissed}
       >
         <div className="scroll-leaf left">
           <svg
@@ -499,9 +510,9 @@ export function App() {
               type="button"
               className="scroll-seal"
               aria-label="入坊造物"
-              tabIndex={prologueOpen ? -1 : 0}
+              tabIndex={prologueDismissed ? -1 : 0}
               onClick={() => {
-                setPrologueOpen(true);
+                setPrologueDismissed(true);
                 playPorcelainChime(soundEnabled);
               }}
             >
@@ -761,7 +772,7 @@ export function App() {
               type="button"
               className="scene-pill"
               disabled={stage === 'firing'}
-              onClick={() => setPrologueOpen(false)}
+              onClick={() => setPrologueDismissed(false)}
             >
               ❖ 卷轴序幕
             </button>

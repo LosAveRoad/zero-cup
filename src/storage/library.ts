@@ -22,7 +22,9 @@ import { del, entries, get, set } from 'idb-keyval';
 import type { UseStore } from 'idb-keyval';
 import { brushAction } from '../core/painting/actions';
 import type {
+  GlazeFinishId,
   LegacyStroke,
+  LightingPresetId,
   PaintingAction,
   ProfileControlPoint,
   StudioArtworkV2,
@@ -258,6 +260,27 @@ function parseSymmetry(raw: unknown): SymmetryCount | undefined {
   return undefined;
 }
 
+/** Presentation choices are optional: older records simply did not store them. */
+const GLAZE_FINISH_IDS: readonly GlazeFinishId[] = [
+  'white',
+  'celadon',
+  'crackle',
+  'gilded',
+];
+const LIGHT_PRESET_IDS: readonly LightingPresetId[] = [
+  'studio',
+  'warm',
+  'celadon',
+];
+
+function parseGlazeFinish(raw: unknown): GlazeFinishId | undefined {
+  return GLAZE_FINISH_IDS.find((id) => id === raw);
+}
+
+function parseLightPreset(raw: unknown): LightingPresetId | undefined {
+  return LIGHT_PRESET_IDS.find((id) => id === raw);
+}
+
 function validateActions(raw: unknown): PaintingAction[] {
   if (!Array.isArray(raw)) throw corrupt('彩绘命令缺失');
   return raw.map((action) => {
@@ -367,6 +390,16 @@ export function validateArtwork(raw: unknown): StudioArtworkV2 {
   if (raw.score !== undefined) {
     if (!isFiniteNumber(raw.score)) throw corrupt('挑战分数无效');
     artwork.score = raw.score;
+  }
+  if (raw.glazeFinish !== undefined) {
+    const glazeFinish = parseGlazeFinish(raw.glazeFinish);
+    if (!glazeFinish) throw corrupt('釉彩选项无效');
+    artwork.glazeFinish = glazeFinish;
+  }
+  if (raw.lightPreset !== undefined) {
+    const lightPreset = parseLightPreset(raw.lightPreset);
+    if (!lightPreset) throw corrupt('灯光选项无效');
+    artwork.lightPreset = lightPreset;
   }
   return artwork;
 }
