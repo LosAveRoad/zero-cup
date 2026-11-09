@@ -11,6 +11,7 @@ export interface UVPoint {
 
 /** The mutually exclusive painting tools of the studio. */
 export type PaintTool = 'brush' | 'eraser' | 'stamp';
+export type SymmetryCount = 1 | 2 | 4 | 6 | 8;
 export type PaintingAction =
   | {
       type: 'BRUSH';
@@ -18,6 +19,7 @@ export type PaintingAction =
       color: string;
       opacity: number;
       size: number;
+      symmetry?: SymmetryCount;
     }
   | {
       type: 'STAMP';
@@ -27,6 +29,7 @@ export type PaintingAction =
       color: string;
       scale: number;
       rotation: number;
+      symmetry?: SymmetryCount;
     }
   | { type: 'ERASE'; path: UVPoint[]; size: number };
 export interface ArtworkMetadata {
@@ -60,6 +63,12 @@ export interface StudioArtworkV1 {
   image: Blob;
 }
 
+/** Finished-glaze presets offered in the exhibition stage. */
+export type GlazeFinishId = 'white' | 'celadon' | 'crackle' | 'gilded';
+
+/** Exhibition lighting presets offered in the exhibition stage. */
+export type LightingPresetId = 'studio' | 'warm' | 'celadon';
+
 /** Schema v2 record. The only shape the app writes. */
 export interface StudioArtworkV2 {
   version: 2;
@@ -73,6 +82,10 @@ export interface StudioArtworkV2 {
   texture?: Blob;
   challengeId?: string;
   score?: number;
+  /** Finished-glaze preset; absent on records saved before it existed (white). */
+  glazeFinish?: GlazeFinishId;
+  /** Exhibition light rig; absent on records saved before it existed (studio). */
+  lightPreset?: LightingPresetId;
 }
 
 export const STUDIO_SCHEMA_VERSION = 2;

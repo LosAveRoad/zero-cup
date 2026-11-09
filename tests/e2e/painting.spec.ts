@@ -240,7 +240,7 @@ test.describe('绘制工具 / painting tools', () => {
   test('画笔、橡皮擦、印章互斥，只有当前工具处于激活状态', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await expect(
       page.getByRole('heading', { name: '瓷器物语', exact: true }),
     ).toBeVisible();
@@ -277,7 +277,7 @@ test.describe('撤销与重做 / undo and redo', () => {
   test('画一笔后计数加一，撤销归零、重做回到一', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     const box = await enterPainting(page);
@@ -313,7 +313,7 @@ test.describe('撤销与重做 / undo and redo', () => {
   test('撤销之后再落笔会丢弃重做分支', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     const box = await enterPainting(page);
@@ -351,7 +351,7 @@ test.describe('橡皮擦 / eraser', () => {
   test('橡皮擦擦掉花纹，露出的仍是瓷坯而不是透明', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     let box = await enterPainting(page);
@@ -390,6 +390,9 @@ test.describe('橡皮擦 / eraser', () => {
     await page.getByRole('button', { name: '重做', exact: true }).click();
     await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
 
+    // 点按钮可能把窗口或侧栏滚动几个像素，画布在页面上的位置随之改变；
+    // 沿用上面的 box 会让擦除落点整体偏移，所以拖动前重新量一次。
+    box = await settleCanvas(page);
     const from = toPage(box, live, region.minX - 8, liveRow);
     const to = toPage(box, live, region.maxX + 8, liveRow);
     await page.mouse.move(from.x, from.y);
@@ -423,7 +426,7 @@ test.describe('印章 / stamps', () => {
   test('落印后计数加一，纹样按钮切换图案', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     let box = await enterPainting(page);
@@ -465,7 +468,7 @@ test.describe('印章 / stamps', () => {
   test('缩放与旋转只作用于下一枚印章，落印后控件复位', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     let box = await enterPainting(page);
@@ -524,7 +527,7 @@ test.describe('视角与接缝 / view and seam', () => {
   test('横扫整个器身只算一笔，接缝处不会绕满一圈', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     const box = await enterPainting(page);
@@ -572,7 +575,7 @@ test.describe('视角与接缝 / view and seam', () => {
   test('旋转视角时拖动不会留下笔迹', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     const box = await enterPainting(page);

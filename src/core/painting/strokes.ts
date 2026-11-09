@@ -1,7 +1,48 @@
-import type { UVPoint } from '../../types/artwork';
+import { brushAction, stampAction } from './actions';
+import type {
+  PaintingAction,
+  SymmetryCount,
+  UVPoint,
+} from '../../types/artwork';
 
 /** The painting layer is a fixed 2048×2048 canvas. */
 export const TEXTURE_SIZE = 2048;
+
+export const SYMMETRY_OPTIONS: readonly {
+  count: SymmetryCount;
+  name: string;
+}[] = [
+  { count: 1, name: '单笔自由' },
+  { count: 2, name: '双面对称' },
+  { count: 4, name: '四方开光' },
+  { count: 6, name: '六瓣团花' },
+  { count: 8, name: '八方万花' },
+];
+
+export type MasterpiecePresetId =
+  'imperial_lotus' | 'cloud_collar' | 'classic_bands';
+
+export const MASTERPIECE_PRESETS: readonly {
+  id: MasterpiecePresetId;
+  name: string;
+  subtitle: string;
+}[] = [
+  {
+    id: 'imperial_lotus',
+    name: '缠枝宝相莲',
+    subtitle: '六方缠枝莲与海水江崖通景',
+  },
+  {
+    id: 'cloud_collar',
+    name: '四方云肩纹',
+    subtitle: '如意云头开光配团花雅制',
+  },
+  {
+    id: 'classic_bands',
+    name: '宋韵青花弦',
+    subtitle: '浓淡分水箍线与折枝莲纹',
+  },
+];
 
 /**
  * Two samples closer than this (in uv units, i.e. ~5 texture pixels) describe
@@ -195,4 +236,180 @@ export function drawOffsets(
   const offsets: number[] = [];
   for (let k = low; k <= high; k++) offsets.push(k * textureSize);
   return offsets;
+}
+
+/**
+ * Replicates a continuous UV stroke path into `symmetry` equally spaced
+ * azimuthal copies around the circumference while preserving unwrapped seam
+ * deltas within each copy.
+ */
+export function replicatePathBySymmetry(
+  points: UVPoint[],
+  symmetry: SymmetryCount = 1,
+): UVPoint[][] {
+  if (points.length === 0) return [];
+  const firstU = points[0].u;
+  const result: UVPoint[][] = [];
+  for (let k = 0; k < symmetry; k++) {
+    const phase = k / symmetry;
+    const baseU = wrapU(firstU + phase);
+    const shift = baseU - firstU;
+    result.push(
+      points.map((point) => ({
+        u: point.u + shift,
+        v: clamp01(point.v),
+      })),
+    );
+  }
+  return result;
+}
+
+/**
+ * Replicates a single UV point into `symmetry` equally spaced azimuthal copies.
+ */
+export function replicatePointBySymmetry(
+  point: UVPoint,
+  symmetry: SymmetryCount = 1,
+): UVPoint[] {
+  const v = clamp01(point.v);
+  return Array.from({ length: symmetry }, (_, k) => ({
+    u: wrapU(point.u + k / symmetry),
+    v,
+  }));
+}
+
+/**
+ * Builds a continuous horizontal potter's wheel ring band ("旋坯弦纹 / 箍线")
+ * around the vessel circumference at height `v`.
+ */
+export function buildRingBandPath(v: number, segments = 16): UVPoint[] {
+  const clampedV = clamp01(v);
+  const steps = Math.max(4, Math.floor(segments));
+  return Array.from({ length: steps + 1 }, (_, i) => ({
+    u: i / steps,
+    v: clampedV,
+  }));
+}
+
+/**
+ * Generates a curated sequence of blue-and-white porcelain painting commands
+ * combining potter's wheel collar rings and radial symmetric motifs.
+ */
+export function createMasterpiecePreset(
+  id: MasterpiecePresetId,
+): PaintingAction[] {
+  if (id === 'imperial_lotus') {
+    return [
+      brushAction(buildRingBandPath(0.88), {
+        size: 14,
+        color: '#174a94',
+        opacity: 1,
+      }),
+      brushAction(buildRingBandPath(0.84), {
+        size: 8,
+        color: '#547fb2',
+        opacity: 0.78,
+      }),
+      stampAction(0.08, 0.72, {
+        assetId: 'cloud',
+        color: '#547fb2',
+        scale: 0.85,
+        rotation: 0,
+        symmetry: 6,
+      }),
+      stampAction(0, 0.48, {
+        assetId: 'lotus',
+        color: '#174a94',
+        scale: 1.15,
+        rotation: 0,
+        symmetry: 6,
+      }),
+      stampAction(0.06, 0.22, {
+        assetId: 'seaside',
+        color: '#174a94',
+        scale: 0.95,
+        rotation: 0,
+        symmetry: 8,
+      }),
+      brushAction(buildRingBandPath(0.1), {
+        size: 14,
+        color: '#174a94',
+        opacity: 1,
+      }),
+    ];
+  }
+  if (id === 'cloud_collar') {
+    return [
+      brushAction(buildRingBandPath(0.9), {
+        size: 12,
+        color: '#174a94',
+        opacity: 1,
+      }),
+      stampAction(0, 0.76, {
+        assetId: 'cloud',
+        color: '#174a94',
+        scale: 1.1,
+        rotation: Math.PI,
+        symmetry: 4,
+      }),
+      brushAction(buildRingBandPath(0.62), {
+        size: 8,
+        color: '#9ab6d5',
+        opacity: 0.55,
+      }),
+      stampAction(0.125, 0.45, {
+        assetId: 'lotus',
+        color: '#547fb2',
+        scale: 1.05,
+        rotation: 0,
+        symmetry: 4,
+      }),
+      stampAction(0, 0.2, {
+        assetId: 'seaside',
+        color: '#174a94',
+        scale: 0.9,
+        rotation: 0,
+        symmetry: 6,
+      }),
+      brushAction(buildRingBandPath(0.08), {
+        size: 12,
+        color: '#174a94',
+        opacity: 1,
+      }),
+    ];
+  }
+  return [
+    brushAction(buildRingBandPath(0.86), {
+      size: 10,
+      color: '#174a94',
+      opacity: 1,
+    }),
+    brushAction(buildRingBandPath(0.82), {
+      size: 20,
+      color: '#9ab6d5',
+      opacity: 0.55,
+    }),
+    brushAction(buildRingBandPath(0.56), {
+      size: 10,
+      color: '#547fb2',
+      opacity: 0.78,
+    }),
+    stampAction(0.25, 0.46, {
+      assetId: 'lotus',
+      color: '#174a94',
+      scale: 1,
+      rotation: 0,
+      symmetry: 2,
+    }),
+    brushAction(buildRingBandPath(0.36), {
+      size: 10,
+      color: '#547fb2',
+      opacity: 0.78,
+    }),
+    brushAction(buildRingBandPath(0.12), {
+      size: 16,
+      color: '#174a94',
+      opacity: 1,
+    }),
+  ];
 }

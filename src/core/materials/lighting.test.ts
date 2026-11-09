@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BISQUE_LIGHT_RIG, STUDIO_LIGHT_RIG, rigAt } from './lighting';
+import {
+  BISQUE_LIGHT_RIG,
+  CELADON_LIGHT_RIG,
+  STUDIO_LIGHT_RIG,
+  WARM_LIGHT_RIG,
+  exhibitionRigFor,
+  rigAt,
+  type LightingPresetId,
+} from './lighting';
 
 describe('light rigs', () => {
   it('describes a complete rig with a highlight-friendly key light', () => {
@@ -32,6 +40,16 @@ describe('light rigs', () => {
     const red = parseInt(rim.slice(1, 3), 16);
     const blue = parseInt(rim.slice(5, 7), 16);
     expect(blue).toBeGreaterThan(red);
+  });
+
+  it('resolves exhibition light presets and falls back to studio', () => {
+    expect(exhibitionRigFor()).toBe(STUDIO_LIGHT_RIG);
+    expect(exhibitionRigFor('studio')).toBe(STUDIO_LIGHT_RIG);
+    expect(exhibitionRigFor('warm')).toBe(WARM_LIGHT_RIG);
+    expect(exhibitionRigFor('celadon')).toBe(CELADON_LIGHT_RIG);
+    expect(exhibitionRigFor('unknown' as LightingPresetId)).toBe(
+      STUDIO_LIGHT_RIG,
+    );
   });
 });
 

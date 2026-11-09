@@ -83,7 +83,7 @@ test('20 new/open cycles keep RAF, GPU resources and DOM listeners bounded', asy
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.addInitScript(installResourceProbe);
-  await page.goto('/');
+  await page.goto('/?prologue=skip');
   await expect(page.getByLabel('三维陶器画布')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
   page.on('dialog', (dialog) => void dialog.accept());

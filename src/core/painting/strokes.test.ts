@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MASTERPIECE_PRESETS,
   MIN_POINT_DISTANCE,
   SEAM_SPLIT_THRESHOLD,
+  SYMMETRY_OPTIONS,
   TEXTURE_SIZE,
   appendStroke,
   azimuthToU,
+  buildRingBandPath,
+  createMasterpiecePreset,
   drawOffsets,
   extendPath,
   mergePath,
+  replicatePathBySymmetry,
+  replicatePointBySymmetry,
   shortestAngleDelta,
   splitSegment,
   unwrapTheta,
@@ -205,5 +211,47 @@ describe('draw offsets', () => {
         { u: 2.4, v: 0.5 },
       ]),
     ).toEqual([-4096, -2048, 0, 2048]);
+  });
+});
+
+describe('symmetry, ring bands and masterpiece presets', () => {
+  it('exposes symmetry options and replicates paths around the circumference', () => {
+    expect(SYMMETRY_OPTIONS.map((o) => o.count)).toEqual([1, 2, 4, 6, 8]);
+    expect(replicatePathBySymmetry([])).toEqual([]);
+    const paths = replicatePathBySymmetry(
+      [
+        { u: 0.9, v: 0.4 },
+        { u: 1.05, v: 0.5 },
+      ],
+      4,
+    );
+    expect(paths).toHaveLength(4);
+    expect(paths[0][0].u).toBeCloseTo(0.9);
+    expect(paths[0][1].u - paths[0][0].u).toBeCloseTo(0.15);
+    expect(paths[1][0].u).toBeCloseTo(0.15);
+    expect(paths[1][1].u - paths[1][0].u).toBeCloseTo(0.15);
+  });
+
+  it('replicates single points and builds horizontal ring band paths', () => {
+    expect(replicatePointBySymmetry({ u: 0.1, v: 0.5 })).toEqual([
+      { u: 0.1, v: 0.5 },
+    ]);
+    const pts = replicatePointBySymmetry({ u: 0.8, v: 0.5 }, 2);
+    expect(pts).toHaveLength(2);
+    expect(pts[0].u).toBeCloseTo(0.8);
+    expect(pts[1].u).toBeCloseTo(0.3);
+
+    const ring = buildRingBandPath(0.75, 8);
+    expect(ring).toHaveLength(9);
+    expect(ring[0]).toEqual({ u: 0, v: 0.75 });
+    expect(ring[8]).toEqual({ u: 1, v: 0.75 });
+  });
+
+  it('creates all classic blue-and-white masterpiece action sequences', () => {
+    expect(MASTERPIECE_PRESETS).toHaveLength(3);
+    for (const preset of MASTERPIECE_PRESETS) {
+      const actions = createMasterpiecePreset(preset.id);
+      expect(actions.length).toBeGreaterThanOrEqual(5);
+    }
   });
 });

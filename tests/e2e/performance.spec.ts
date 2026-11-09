@@ -268,7 +268,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     test.setTimeout(300_000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await expect(
       page.getByRole('heading', { name: '瓷器物语', exact: true }),
     ).toBeVisible();
@@ -350,7 +350,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
     await page.getByLabel('笔刷粗细').selectOption({ label: '粗' });
 
@@ -389,7 +389,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
   test('一次十步拖拽的输入延迟远小于一秒', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
 
     // 记录「浏览器生成事件」到「应用处理完这个事件」之间的延迟。
@@ -477,7 +477,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
     await page.getByLabel('笔刷粗细').selectOption({ label: '粗' });
 
@@ -563,7 +563,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
 
     // 在任何操作之前挂上 webglcontextlost 监听。

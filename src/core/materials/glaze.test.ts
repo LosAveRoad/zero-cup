@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   BISQUE_RECIPE,
+  CELADON_GLAZE_RECIPE,
+  CRACKLE_GLAZE_RECIPE,
   FIRING_DURATION_MS,
+  GILDED_GLAZE_RECIPE,
+  GLAZE_FINISH_PRESETS,
   WHITE_GLAZE_RECIPE,
+  buildCrackleNetwork,
   firingStage,
   glazeProgress,
+  glazeRecipeForFinish,
   interpolateRecipe,
+  kilnTelemetryFor,
   recipeAt,
 } from './glaze';
 
@@ -151,5 +158,41 @@ describe('recipeAt', () => {
     expect(WHITE_GLAZE_RECIPE.metalness).toBe(0.05);
     expect(WHITE_GLAZE_RECIPE.clearcoat).toBe(1);
     expect(WHITE_GLAZE_RECIPE.clearcoatRoughness).toBe(0.05);
+  });
+});
+
+describe('glaze finishes, kiln telemetry and crackle network', () => {
+  it('resolves every glaze finish preset to its recipe', () => {
+    expect(GLAZE_FINISH_PRESETS).toHaveLength(4);
+    expect(glazeRecipeForFinish('white')).toEqual(WHITE_GLAZE_RECIPE);
+    expect(glazeRecipeForFinish('celadon')).toEqual(CELADON_GLAZE_RECIPE);
+    expect(glazeRecipeForFinish('crackle')).toEqual(CRACKLE_GLAZE_RECIPE);
+    expect(glazeRecipeForFinish('gilded')).toEqual(GILDED_GLAZE_RECIPE);
+  });
+
+  it('computes kiln temperature and phase telemetry across all firing stages', () => {
+    const start = kilnTelemetryFor(0);
+    expect(start.temperatureC).toBe(25);
+    expect(start.phaseTitle).toBe('低温烘坯排湿');
+    expect(kilnTelemetryFor(Number.NaN).temperatureC).toBe(25);
+
+    const midOxidation = kilnTelemetryFor(0.3);
+    expect(midOxidation.phaseTitle).toBe('中温氧化素烧');
+    expect(midOxidation.temperatureC).toBeGreaterThan(300);
+
+    const reduction = kilnTelemetryFor(0.8);
+    expect(reduction.phaseTitle).toBe('高温强还原发色');
+    expect(reduction.atmosphere).toContain('CO');
+
+    const done = kilnTelemetryFor(1);
+    expect(done.temperatureC).toBe(1310);
+    expect(done.phaseTitle).toBe('高温玻化成瓷');
+  });
+
+  it('builds a deterministic Ge-kiln iron-and-gold crackle network', () => {
+    const segments = buildCrackleNetwork();
+    expect(segments.length).toBeGreaterThan(100);
+    expect(segments.some((s) => s.kind === 'iron')).toBe(true);
+    expect(segments.some((s) => s.kind === 'gold')).toBe(true);
   });
 });

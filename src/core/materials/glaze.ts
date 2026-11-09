@@ -6,6 +6,10 @@
  * 由渲染器（studio-renderer.ts）读取并应用到 MeshPhysicalMaterial。
  */
 
+import type { GlazeFinishId } from '../../types/artwork';
+
+export type { GlazeFinishId };
+
 /** 统一的烧制时长（毫秒）。整个应用只有这一个时长常量。 */
 export const FIRING_DURATION_MS = 2500;
 
@@ -46,6 +50,69 @@ export const WHITE_GLAZE_RECIPE: GlazeRecipe = {
   sheen: 0.25,
   sheenColor: '#fff3e2',
 };
+
+export const CELADON_GLAZE_RECIPE: GlazeRecipe = {
+  name: '汝窑天青',
+  color: '#e5f0eb',
+  roughness: 0.12,
+  metalness: 0.04,
+  clearcoat: 1,
+  clearcoatRoughness: 0.04,
+  sheen: 0.35,
+  sheenColor: '#d7ebe2',
+};
+
+export const CRACKLE_GLAZE_RECIPE: GlazeRecipe = {
+  name: '哥窑米黄',
+  color: '#f6f0e4',
+  roughness: 0.16,
+  metalness: 0.05,
+  clearcoat: 1,
+  clearcoatRoughness: 0.06,
+  sheen: 0.3,
+  sheenColor: '#efe4cf',
+};
+
+export const GILDED_GLAZE_RECIPE: GlazeRecipe = {
+  name: '宫廷描金',
+  color: '#ffffff',
+  roughness: 0.12,
+  metalness: 0.08,
+  clearcoat: 1,
+  clearcoatRoughness: 0.03,
+  sheen: 0.35,
+  sheenColor: '#ffe9b8',
+};
+
+export const GLAZE_FINISH_PRESETS: readonly {
+  id: GlazeFinishId;
+  name: string;
+}[] = [
+  { id: 'white', name: '枢府甜白' },
+  { id: 'celadon', name: '汝窑天青' },
+  { id: 'crackle', name: '哥窑金丝' },
+  { id: 'gilded', name: '宫廷描金' },
+];
+
+export function glazeRecipeForFinish(finishId: GlazeFinishId): GlazeRecipe {
+  if (finishId === 'celadon') return CELADON_GLAZE_RECIPE;
+  if (finishId === 'crackle') return CRACKLE_GLAZE_RECIPE;
+  if (finishId === 'gilded') return GILDED_GLAZE_RECIPE;
+  return WHITE_GLAZE_RECIPE;
+}
+
+export interface KilnTelemetry {
+  temperatureC: number;
+  phaseTitle: string;
+  atmosphere: string;
+  chemistryNote: string;
+}
+
+export interface CrackleSegment {
+  from: [number, number];
+  to: [number, number];
+  kind: 'iron' | 'gold';
+}
 
 /** 烧制阶段标签。 */
 export type FiringStage = 'bisque' | 'rising' | 'glazing' | 'complete';
@@ -153,4 +220,80 @@ export function interpolateRecipe(
  */
 export function recipeAt(progress: number): GlazeRecipe {
   return interpolateRecipe(BISQUE_RECIPE, WHITE_GLAZE_RECIPE, progress);
+}
+
+/**
+ * 实时窑炉热力学遥测：根据 0..1 烧制进度计算温度（25°C ~ 1310°C）、
+ * 窑内气氛与陶瓷相变说明。
+ */
+export function kilnTelemetryFor(progress: number): KilnTelemetry {
+  const p = Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+  const temperatureC = Math.round(25 + 1285 * p);
+  if (p < RISING_AT) {
+    return {
+      temperatureC,
+      phaseTitle: '低温烘坯排湿',
+      atmosphere: '氧化焰 (O₂)',
+      chemistryNote: '坯体物理吸附水平稳排出，定型素坯骨架',
+    };
+  }
+  if (p < GLAZING_AT) {
+    return {
+      temperatureC,
+      phaseTitle: '中温氧化素烧',
+      atmosphere: '氧化焰 (O₂)',
+      chemistryNote: '高岭土脱去结构水转化为偏高岭石，莫来石晶核初生',
+    };
+  }
+  if (p < 1) {
+    return {
+      temperatureC,
+      phaseTitle: '高温强还原发色',
+      atmosphere: '强还原焰 (CO)',
+      chemistryNote: '钴料还原呈翠毛蓝，长石釉熔融包裹青花发色层',
+    };
+  }
+  return {
+    temperatureC: 1310,
+    phaseTitle: '高温玻化成瓷',
+    atmosphere: '保温成瓷',
+    chemistryNote: '胎釉致密烧结，叩之声如磬，莹润如玉',
+  };
+}
+
+/**
+ * 生成确定性的哥窑“金丝铁线”冰裂纹网格（UV 归一化坐标 0..1）。
+ * 铁线为主干深色裂纹，金丝为次级细密暖金裂纹。
+ */
+export function buildCrackleNetwork(): CrackleSegment[] {
+  const cols = 8;
+  const rows = 6;
+  const node = (c: number, r: number): [number, number] => {
+    const wrappedC = ((c % cols) + cols) % cols;
+    const seed = wrappedC * 17 + r * 31;
+    const dx = r === 0 || r === rows ? 0 : Math.sin(seed * 1.7) * (0.28 / cols);
+    const dy = r === 0 || r === rows ? 0 : Math.cos(seed * 2.3) * (0.28 / rows);
+    const u = c / cols + dx;
+    const v = r / rows + dy;
+    return [u, v];
+  };
+  const segments: CrackleSegment[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const p00 = node(c, r);
+      const p10 = node(c + 1, r);
+      const p01 = node(c, r + 1);
+      const p11 = node(c + 1, r + 1);
+      const center: [number, number] = [
+        (p00[0] + p10[0] + p01[0] + p11[0]) / 4,
+        (p00[1] + p10[1] + p01[1] + p11[1]) / 4,
+      ];
+      segments.push({ from: p00, to: p10, kind: 'iron' });
+      segments.push({ from: p00, to: p01, kind: 'iron' });
+      segments.push({ from: p00, to: center, kind: 'gold' });
+      segments.push({ from: p10, to: center, kind: 'gold' });
+      segments.push({ from: p01, to: center, kind: 'gold' });
+    }
+  }
+  return segments;
 }

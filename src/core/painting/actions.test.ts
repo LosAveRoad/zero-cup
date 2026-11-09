@@ -24,13 +24,15 @@ describe('painting command factories', () => {
     expect(action.type === 'BRUSH' && action.path[0].u).toBe(0.1);
   });
 
-  it('keeps an explicit brush opacity', () => {
+  it('keeps an explicit brush opacity and optional symmetry', () => {
     const action = brushAction([], {
       size: 12,
       color: '#547fb2',
       opacity: 0.4,
+      symmetry: 6,
     });
     expect(action.type === 'BRUSH' && action.opacity).toBe(0.4);
+    expect(action.type === 'BRUSH' && action.symmetry).toBe(6);
   });
 
   it('builds erase commands with a copied path', () => {
@@ -63,8 +65,9 @@ describe('painting command factories', () => {
         color: '#9ab6d5',
         scale: 1.5,
         rotation: Math.PI,
+        symmetry: 4,
       }),
-    ).toMatchObject({ scale: 1.5, rotation: Math.PI });
+    ).toMatchObject({ scale: 1.5, rotation: Math.PI, symmetry: 4 });
   });
 
   it('exposes the dragged path of brush and erase commands only', () => {

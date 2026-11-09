@@ -30,7 +30,7 @@ const FRONT_DISTANCE = 6.3;
 /** The close-up keeps the focus point but moves the camera closer. */
 const CLOSEUP_DISTANCE = 4.8;
 
-/** The three-quarter view is the front view rotated by 30° around the Y axis. */
+/** The three-quarter view pitches up by 30° and orbits horizontally by 30°. */
 const TILT_ANGLE = (30 * Math.PI) / 180;
 
 /** Longest title drawn on the export, matching the previous export behaviour. */
@@ -70,19 +70,27 @@ export interface CameraPose {
   fov: number;
 }
 
-/** Rotate a point around the vertical (Y) axis of the world origin. */
-function rotateY(
-  [x, y, z]: [number, number, number],
-  angle: number,
+/**
+ * Orbits the front camera around `[0, TARGET_HEIGHT, 0]` by a horizontal
+ * azimuth (`yaw`) and an upward elevation (`pitch`) while keeping distance fixed.
+ */
+function orbitFromFront(
+  distance: number,
+  yaw: number,
+  pitch: number,
 ): [number, number, number] {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [x * cos + z * sin, y, -x * sin + z * cos];
+  const horizontal = distance * Math.cos(pitch);
+  return [
+    horizontal * Math.sin(yaw),
+    TARGET_HEIGHT + distance * Math.sin(pitch),
+    horizontal * Math.cos(yaw),
+  ];
 }
 
 /**
- * The recommended camera positions. The camera always sits level with the
- * middle of the vessel, so the silhouette of the pot reads straight on.
+ * The recommended camera positions. `front` and `closeup` sit level with the
+ * middle of the vessel; `tilt30` elevates 30° above the horizon and orbits 30°
+ * so the shoulder and mouth rim read with three-dimensional depth.
  */
 export const CAMERA_PRESETS: Record<
   Exclude<CameraPresetId, 'free'>,
@@ -94,7 +102,7 @@ export const CAMERA_PRESETS: Record<
     fov: CAMERA_FOV,
   },
   tilt30: {
-    position: rotateY([0, TARGET_HEIGHT, FRONT_DISTANCE], TILT_ANGLE),
+    position: orbitFromFront(FRONT_DISTANCE, TILT_ANGLE, TILT_ANGLE),
     target: [0, TARGET_HEIGHT, 0],
     fov: CAMERA_FOV,
   },

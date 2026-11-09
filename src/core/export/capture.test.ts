@@ -48,6 +48,16 @@ function azimuth(pose: {
   return (Math.atan2(dx, dz) * 180) / Math.PI;
 }
 
+/** Vertical pitch/elevation angle above the target plane, in degrees. */
+function elevation(pose: {
+  position: [number, number, number];
+  target: [number, number, number];
+}): number {
+  const dy = pose.position[1] - pose.target[1];
+  const dist = distance(pose.position, pose.target);
+  return (Math.asin(Math.min(1, Math.max(-1, dy / dist))) * 180) / Math.PI;
+}
+
 describe('camera presets', () => {
   it('keeps the model height and export size in sync with the renderer', () => {
     expect(MODEL_HEIGHT).toBe(2.8);
@@ -63,11 +73,13 @@ describe('camera presets', () => {
     expect(pose.fov).toBeGreaterThan(0);
   });
 
-  it('rotates the front view by exactly 30 degrees around the vertical axis', () => {
+  it('elevates the tilt30 view by 30 degrees pitch and 30 degrees azimuth', () => {
     const front = poseFor('front');
     const tilt = poseFor('tilt30');
-    expect(viewAngle(front, tilt)).toBeCloseTo(30, 6);
+    expect(elevation(front)).toBeCloseTo(0, 6);
+    expect(elevation(tilt)).toBeCloseTo(30, 6);
     expect(azimuth(tilt) - azimuth(front)).toBeCloseTo(30, 6);
+    expect(viewAngle(front, tilt)).toBeGreaterThan(30);
     expect(distance(tilt.position, tilt.target)).toBeCloseTo(
       distance(front.position, front.target),
       6,

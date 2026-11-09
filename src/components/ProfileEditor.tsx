@@ -6,8 +6,10 @@ import type {
 import type { ProfileControlPoint } from '../types/artwork';
 import {
   PROFILE_LIMITS,
+  computeVesselMetrics,
   createProfile,
   createTemplateProfile,
+  matchTemplateId,
   moveControlPoint,
   sampleProfile,
   type ProfileTemplateId,
@@ -17,6 +19,7 @@ export interface ProfileEditorProps {
   points: ProfileControlPoint[];
   onChange: (points: ProfileControlPoint[]) => void;
   templates?: ProfileTemplateId[];
+  targetPoints?: ProfileControlPoint[];
   onReset?: () => void;
   disabled?: boolean;
 }
@@ -102,6 +105,7 @@ export function ProfileEditor({
   points,
   onChange,
   templates = ALL_TEMPLATES,
+  targetPoints,
   onReset,
   disabled = false,
 }: ProfileEditorProps): JSX.Element {
@@ -110,7 +114,7 @@ export function ProfileEditor({
   const pointsRef = useRef<ProfileControlPoint[]>(points);
   const onChangeRef = useRef(onChange);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [template, setTemplate] = useState<ProfileTemplateId | ''>('');
+  const template = useMemo(() => matchTemplateId(points), [points]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -118,8 +122,39 @@ export function ProfileEditor({
   }, [points, onChange]);
 
   const outline = useMemo(() => outlinePoints(points), [points]);
+  const metrics = useMemo(() => computeVesselMetrics(points), [points]);
   const outlinePath = useMemo(() => pathFor(outline, false), [outline]);
   const mirrorPath = useMemo(() => pathFor(outline, true), [outline]);
+  const silhouetteFillPath = useMemo(() => {
+    if (outline.length === 0) return '';
+    const right = outline
+      .map((s, i) => {
+        const { x, y } = toCanvas(s.radius, s.height);
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(' ');
+    const left = [...outline]
+      .reverse()
+      .map((s) => {
+        const { x, y } = toCanvas(s.radius, s.height);
+        const mx = AXIS_X - (x - AXIS_X);
+        return `L${mx.toFixed(2)} ${y.toFixed(2)}`;
+      })
+      .join(' ');
+    return `${right} ${left} Z`;
+  }, [outline]);
+  const targetOutline = useMemo(
+    () => (targetPoints ? outlinePoints(targetPoints) : null),
+    [targetPoints],
+  );
+  const targetRightPath = useMemo(
+    () => (targetOutline ? pathFor(targetOutline, false) : ''),
+    [targetOutline],
+  );
+  const targetLeftPath = useMemo(
+    () => (targetOutline ? pathFor(targetOutline, true) : ''),
+    [targetOutline],
+  );
 
   // Window level listeners keep the drag alive when the pointer leaves the
   // canvas and make sure a cancelled gesture can never lock the editor.
@@ -242,14 +277,55 @@ export function ProfileEditor({
         aria-label="器型轮廓编辑器"
         style={{ width: '100%', maxWidth: 360, touchAction: 'none' }}
       >
+        <defs>
+          <linearGradient id="vesselClayFill" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#d9e6f2" stopOpacity="0.42" />
+            <stop offset="50%" stopColor="#eef3f7" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#c4d8ea" stopOpacity="0.46" />
+          </linearGradient>
+        </defs>
         <rect
           x={PADDING / 2}
           y={PADDING / 2}
           width={VIEW_WIDTH - PADDING}
           height={VIEW_HEIGHT - PADDING}
+          rx={8}
           fill="#f7f4ec"
           stroke="#d8d2c4"
         />
+        {silhouetteFillPath && (
+          <path
+            d={silhouetteFillPath}
+            fill="url(#vesselClayFill)"
+            pointerEvents="none"
+          />
+        )}
+        {/* Belly maximum diameter callout line */}
+        {(() => {
+          const bellyPos = toCanvas(metrics.bellyRadius, metrics.bellyHeight);
+          const leftBellyX = AXIS_X - (bellyPos.x - AXIS_X);
+          return (
+            <g aria-hidden="true" pointerEvents="none" opacity="0.72">
+              <line
+                x1={leftBellyX}
+                y1={bellyPos.y}
+                x2={bellyPos.x}
+                y2={bellyPos.y}
+                stroke="#7a9bb8"
+                strokeWidth="1"
+                strokeDasharray="2 3"
+              />
+              <text
+                x={PADDING + 6}
+                y={Math.max(TOP_Y + 24, bellyPos.y - 4)}
+                fontSize="9.5"
+                fill="#4a6f8f"
+              >
+                最大腹径 {(metrics.bellyRadius * 20).toFixed(1)}cm
+              </text>
+            </g>
+          );
+        })()}
         {/* vertical radius axis: axis of revolution, height 0 at the bottom */}
         <line
           x1={AXIS_X}
@@ -282,6 +358,30 @@ export function ProfileEditor({
         >
           半径 0.9
         </text>
+        {targetOutline && (
+          <g aria-hidden="true">
+            <path
+              d={targetLeftPath}
+              fill="none"
+              stroke="#c98448"
+              strokeWidth="1.5"
+              strokeDasharray="3 3"
+              opacity="0.55"
+            />
+            <path
+              d={targetRightPath}
+              fill="none"
+              stroke="#c98448"
+              strokeWidth="2"
+              strokeDasharray="6 3"
+              opacity="0.85"
+              data-testid="profile-target-reference"
+            />
+            <text x={PADDING + 6} y={TOP_Y + 10} fontSize="10" fill="#b06b30">
+              虚线：挑战目标参考
+            </text>
+          </g>
+        )}
         {/* mirrored silhouette: the symmetry reference of the lathe */}
         <path
           d={mirrorPath}
@@ -328,6 +428,20 @@ export function ProfileEditor({
           );
         })}
       </svg>
+      <div className="vessel-metrics-grid" aria-label="器物造物参数">
+        <div className="metric-chip">
+          <span className="metric-label">预估容积</span>
+          <strong>{metrics.volumeMl} mL</strong>
+        </div>
+        <div className="metric-chip">
+          <span className="metric-label">器身修长比</span>
+          <strong>{metrics.slenderness.toFixed(2)}</strong>
+        </div>
+        <div className="metric-chip">
+          <span className="metric-label">重心稳度</span>
+          <strong>{metrics.stabilityScore} 分</strong>
+        </div>
+      </div>
       <div className="profile-editor-controls">
         <label>
           模板
@@ -337,7 +451,6 @@ export function ProfileEditor({
             disabled={disabled}
             onChange={(event) => {
               const kind = event.target.value as ProfileTemplateId | '';
-              setTemplate(kind);
               if (kind) onChange(createTemplateProfile(kind));
             }}
           >
@@ -353,7 +466,6 @@ export function ProfileEditor({
           type="button"
           disabled={disabled}
           onClick={() => {
-            setTemplate('');
             if (onReset) onReset();
             else onChange(createProfile());
           }}

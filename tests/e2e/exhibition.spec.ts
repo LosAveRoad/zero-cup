@@ -358,7 +358,7 @@ async function compareExports(
 test.describe('烧制阶段', () => {
   test('烧制期间进度条出现，画廊与新建按钮被锁定', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     // Put one finished piece in the gallery so its buttons exist at all.
@@ -424,7 +424,7 @@ test.describe('烧制阶段', () => {
 
   test('进度条随时间推进，只完成一次且不再回到烧制', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
     await recordProgressValues(page);
     await page.getByRole('button', { name: '入窑烧制' }).click();
@@ -486,7 +486,7 @@ test.describe('烧制阶段', () => {
 test.describe('成品导出', () => {
   test('导出的成品图仍然是 1080×1080 的 PNG', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
     await page.getByLabel('作品名称').fill('尺寸测试青花瓶');
 
@@ -500,7 +500,7 @@ test.describe('成品导出', () => {
 
   test('导出带上作品名、日期与红色印章', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
     await page.getByLabel('作品名称').fill('青花瓶甲');
 
@@ -541,7 +541,7 @@ test.describe('成品导出', () => {
 test.describe('成品机位', () => {
   test('俯仰30° 与特写互斥地切换 aria-pressed', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     const group = page.getByRole('group', { name: '推荐机位' });
@@ -594,7 +594,7 @@ test.describe('成品机位', () => {
 
   test('自由旋转保留用户拖动的视角', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     const group = page.getByRole('group', { name: '推荐机位' });
@@ -643,7 +643,7 @@ test.describe('成品机位', () => {
 test.describe('创作闭环', () => {
   test('导出后可以继续彩绘，并再次烧制到成品', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
     // One stroke, so the undo history survives the round trip.
@@ -693,7 +693,7 @@ test.describe('创作闭环', () => {
 
   test('釉面在烧制过程中连续过渡，而不是一次性跳变', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
     // Sample the vessel centre once per animation frame while the kiln runs.
@@ -808,6 +808,62 @@ test.describe('创作闭环', () => {
         luminance(firing[i - 3].rgb) - 1,
       );
     }
+
+    expect(errors).toEqual([]);
+  });
+
+  test('卷轴序幕、彩绘毛笔水晕与成品阶段小金属棒五声轻叩听音', async ({
+    page,
+  }) => {
+    const errors = watchPageErrors(page);
+    // No query parameter: this is the path a first-time visitor gets.
+    await page.goto('/');
+
+    // Scroll prologue is visible on entry and opens when clicking 入坊造物
+    const enterBtn = page.getByRole('button', { name: '入坊造物' });
+    await expect(enterBtn).toBeVisible();
+    await enterBtn.click();
+    await expect(page.locator('.scroll-prologue.is-open')).toHaveCount(1);
+
+    // Painting stage shows the miniature calligraphy brush reticle
+    await page.getByRole('button', { name: '定型进入彩绘' }).click();
+    const canvas = page.getByLabel('三维陶器画布');
+    const rect = (await canvas.boundingBox())!;
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'brush-reticle');
+    await expect(page.locator('.calligraphy-brush-reticle')).toHaveCount(1);
+
+    // Importing an image extracts its contours and imprints onto the vessel
+    const sampleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#fff"/><circle cx="40" cy="40" r="24" fill="#000"/></svg>`;
+    await page.getByLabel('导入图案图片').setInputFiles({
+      name: 'motif.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from(sampleSvg, 'utf-8'),
+    });
+    await expect(page.getByLabel('导入图案青花轮廓预览')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: '导入图样' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
+
+    await page.getByRole('button', { name: '入窑烧制' }).click();
+    await expect(page.getByRole('heading', { name: '成品工作台' })).toBeVisible(
+      { timeout: 10_000 },
+    );
+
+    // Hovering over the center of the finished porcelain switches to the metal rod cursor
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'metal-rod');
+
+    // Clicking on the porcelain strikes one pentatonic note and spawns an upward-floating note glyph
+    await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'metal-rod');
+    await expect(page.locator('.chime-note-glyph')).toHaveCount(1);
+    await expect(page.locator('.scene-hint')).toContainText('轻叩瓷身奏响五声');
+
+    // Moving to the far corner outside the vessel clears the metal rod cursor
+    await page.mouse.move(rect.x + 12, rect.y + 12);
+    await expect(canvas).not.toHaveAttribute('data-cursor', 'metal-rod');
 
     expect(errors).toEqual([]);
   });
