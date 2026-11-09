@@ -4,8 +4,34 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    # 补丁与次版本合成一个 PR，避免每周刷一屏独立 PR。
+    groups:
+      npm-patch-minor:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+    open-pull-requests-limit: 3
+    # 大版本升级按 contribute.md §8 走单独任务：先保留当前可运行锁文件，
+    # 真要升时改配置、跑全量回归并附证据，不混在自动流程里。
+    ignore:
+      - dependency-name: 'vite'
+        versions: ['8.x']
+      - dependency-name: 'vitest'
+        versions: ['5.x']
+      - dependency-name: '@eslint/js'
+        versions: ['10.x']
+      - dependency-name: 'eslint-plugin-react-hooks'
+        versions: ['7.x']
+      - dependency-name: 'react'
+        versions: ['19.x']
+      - dependency-name: '@types/react'
+        versions: ['19.x']
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    # Actions 的大版本升级风险低，但三个独立 PR 没意义，合成一个评审。
+    groups:
+      actions:
+        patterns: ['*']
+        update-types: ['major', 'minor', 'patch']
+    open-pull-requests-limit: 2
