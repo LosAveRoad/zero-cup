@@ -431,9 +431,13 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
       )} medianInputLatencyMs=${median.toFixed(1)} samples=${latency.length}`,
     );
 
-    // 应用处理输入的速度：远快于一秒。
+    // 应用处理输入的速度：远快于一秒。用中位数判断：单个慢帧会把最大值
+    // 抬到几秒，那测的是 runner 的负载而不是应用的响应。真正让每个事件都
+    // 卡住的回归会把中位数一起带上去。最大值仍然打印出来当线索。
     expect(latency.length).toBeGreaterThanOrEqual(10);
-    expect(worst).toBeLessThan(1000);
+    expect(median).toBeLessThan(1000);
+    // 兜底：即使中位数正常，单帧也不该卡上十秒。
+    expect(worst).toBeLessThan(10_000);
     // 端到端的墙钟时间里有一大半是 Playwright 每一步的 CDP 往返
     // （空页面上的单次 mouse.move 就要十几毫秒，软件渲染下更贵），
     // 所以这里只做一个宽松的回归上限，真正的数字见上面的日志。

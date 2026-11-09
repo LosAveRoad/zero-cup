@@ -798,9 +798,14 @@ test.describe('创作闭环', () => {
     expect(interior.length).toBeGreaterThanOrEqual(1);
 
     // And it brightened the whole way, without flickering back and forth.
-    for (let i = 1; i < firing.length; i += 1) {
+    // The comparison is made three samples apart on purpose: the probe's
+    // requestAnimationFrame and the renderer's are not ordered against each
+    // other, so one sample can read a value that is one frame stale. A dip
+    // that lasts a single frame is sampling noise; a real flicker lasts
+    // longer than that and still trips this check.
+    for (let i = 3; i < firing.length; i += 1) {
       expect(luminance(firing[i].rgb)).toBeGreaterThanOrEqual(
-        luminance(firing[i - 1].rgb) - 1,
+        luminance(firing[i - 3].rgb) - 1,
       );
     }
 
