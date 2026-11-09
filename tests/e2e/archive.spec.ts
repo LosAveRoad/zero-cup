@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { PaintingAction } from '../../src/types/artwork';
 
 const DATABASE_NAME = 'porcelain-tales-studio';
 const OBJECT_STORE_NAME = 'artworks';
@@ -29,6 +30,7 @@ interface StoredRecordSummary {
   strokes: unknown;
   actions: unknown;
   imageSize: number;
+  textureHash: string | null;
 }
 
 /** 与 `src/core/geometry/profile.ts` 的默认器型一致（8 个截面点）。 */
@@ -136,21 +138,46 @@ async function readRecords(page: Page): Promise<StoredRecordSummary[]> {
         }),
       ]);
       db.close();
-      return values.map((value, index) => {
-        const record = (value ?? {}) as Record<string, unknown>;
-        const image = record.image;
-        return {
-          key: String(keys[index]),
-          version: record.version ?? null,
-          name: record.name ?? null,
-          createdAt: record.createdAt ?? null,
-          updatedAt: record.updatedAt ?? null,
-          profile: record.profile ?? null,
-          strokes: record.strokes ?? null,
-          actions: record.actions ?? null,
-          imageSize: image instanceof Blob ? image.size : -1,
-        };
-      });
+      return Promise.all(
+        values.map(async (value, index) => {
+          const record = (value ?? {}) as Record<string, unknown>;
+          const image = record.image;
+          const texture = record.texture;
+          let textureHash: string | null = null;
+          if (texture instanceof Blob) {
+            // Compare decoded pixels, not PNG encoder output/metadata.
+            const bitmap = await createImageBitmap(texture);
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const context = canvas.getContext('2d')!;
+            context.drawImage(bitmap, 0, 0);
+            bitmap.close();
+            const pixels = context.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            ).data;
+            textureHash = Array.from(
+              new Uint8Array(await crypto.subtle.digest('SHA-256', pixels)),
+              (byte) => byte.toString(16).padStart(2, '0'),
+            ).join('');
+          }
+          return {
+            key: String(keys[index]),
+            version: record.version ?? null,
+            name: record.name ?? null,
+            createdAt: record.createdAt ?? null,
+            updatedAt: record.updatedAt ?? null,
+            profile: record.profile ?? null,
+            strokes: record.strokes ?? null,
+            actions: record.actions ?? null,
+            imageSize: image instanceof Blob ? image.size : -1,
+            textureHash,
+          };
+        }),
+      );
     },
     { databaseName: DATABASE_NAME, storeName: OBJECT_STORE_NAME },
   );
@@ -489,4 +516,147 @@ test.describe('存储失败的可见性', () => {
     ).toBeVisible();
     expect(errors).toEqual([]);
   });
+});
+
+test('24 mixed actions survive reload and the full undo window without losing the texture', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await resetDatabase(page);
+  await page.getByLabel('截面 4 半径').fill('0.72');
+  await page.getByRole('button', { name: '定型进入彩绘' }).click();
+
+  const tools = ['画笔', '印章', '橡皮擦'] as const;
+  for (let index = 0; index < 24; index++) {
+    await page
+      .getByRole('button', { name: tools[index % 3], exact: true })
+      .click();
+    await drawStroke(page, index % 2 === 0 ? 1 : -1);
+    await expect(
+      page.getByText(`已落笔 ${index + 1} 次`, { exact: false }),
+    ).toBeVisible();
+  }
+  await page.getByRole('button', { name: '入窑烧制' }).click();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await page.getByLabel('作品名称').fill('24次混合操作');
+  await page.getByRole('button', { name: '保存到藏品' }).click();
+  await expect(page.getByRole('status')).toContainText('作品已保存');
+  const attachTexture = async (name: string) => {
+    const bytes = await page.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('porcelain-tales-studio');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const texture = await new Promise<Blob>((resolve, reject) => {
+        const request = db
+          .transaction('artworks')
+          .objectStore('artworks')
+          .getAll();
+        request.onsuccess = () => resolve(request.result[0].texture);
+        request.onerror = () => reject(request.error);
+      }).finally(() => db.close());
+      return Array.from(new Uint8Array(await texture.arrayBuffer()));
+    });
+    await testInfo.attach(name, {
+      body: Buffer.from(bytes),
+      contentType: 'image/png',
+    });
+    return bytes;
+  };
+  const beforeTexture = await attachTexture('texture-before-reload');
+  const [before] = await readRecords(page);
+  const actions = before.actions as PaintingAction[];
+  expect(actions).toHaveLength(24);
+  expect(actions.map((action) => action.type)).toEqual(
+    Array.from(
+      { length: 24 },
+      (_, index) => ['BRUSH', 'STAMP', 'ERASE'][index % 3],
+    ),
+  );
+  expect(before.textureHash).toMatch(/^[0-9a-f]{64}$/);
+
+  await page.reload();
+  page.on('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: '打开作品' }).click();
+  await expect(page.getByLabel('作品名称')).toHaveValue('24次混合操作');
+  await page.getByRole('button', { name: '继续彩绘' }).click();
+  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
+  const undo = page.getByRole('button', { name: '撤销', exact: true });
+  const redo = page.getByRole('button', { name: '重做', exact: true });
+  for (let index = 0; index < 20; index++) await undo.click();
+  await expect(page.getByText('已落笔 4 次', { exact: false })).toBeVisible();
+  await expect(undo).toBeDisabled();
+  for (let index = 0; index < 20; index++) await redo.click();
+  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
+  await expect(redo).toBeDisabled();
+
+  await page.getByRole('button', { name: '入窑烧制' }).click();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await page.getByRole('button', { name: '保存到藏品' }).click();
+  await expect(page.getByRole('status')).toContainText('作品已保存');
+  const records = await readRecords(page);
+  expect(records).toHaveLength(1);
+  expect(records[0].key).toBe(before.key);
+  expect(records[0].actions).toEqual(actions);
+  expect(records[0].profile).toEqual(before.profile);
+  // The renderer replays all three tools after opening and undo/redo.
+  // Matching the actual exported texture catches visual loss beyond action counts.
+  const afterTexture = await attachTexture('texture-after-replay');
+  const difference = await page.evaluate(
+    async ([beforeBytes, afterBytes]) => {
+      const decode = async (bytes: number[]) => {
+        const bitmap = await createImageBitmap(
+          new Blob([new Uint8Array(bytes)], { type: 'image/png' }),
+        );
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return {
+          width: canvas.width,
+          height: canvas.height,
+          pixels: context.getImageData(0, 0, canvas.width, canvas.height).data,
+        };
+      };
+      const a = await decode(beforeBytes);
+      const b = await decode(afterBytes);
+      if (a.width !== b.width || a.height !== b.height)
+        throw new Error('Texture dimensions changed');
+      let maxChannelDifference = 0;
+      let changedPixels = 0;
+      for (let i = 0; i < a.pixels.length; i += 4) {
+        let changed = false;
+        for (let channel = 0; channel < 4; channel++) {
+          const delta = Math.abs(a.pixels[i + channel] - b.pixels[i + channel]);
+          maxChannelDifference = Math.max(maxChannelDifference, delta);
+          changed ||= delta !== 0;
+        }
+        if (changed) changedPixels++;
+      }
+      return {
+        width: a.width,
+        height: a.height,
+        maxChannelDifference,
+        changedPixels,
+      };
+    },
+    [beforeTexture, afterTexture],
+  );
+  await testInfo.attach('texture-pixel-difference', {
+    body: JSON.stringify(difference),
+    contentType: 'application/json',
+  });
+  expect(difference.width).toBe(2048);
+  expect(difference.height).toBe(2048);
+  // Linux Canvas incremental drawing vs replay differed at just 3 pixels
+  // by 1 channel level. Compare every pixel with that rounding bound; keep
+  // exact action/profile checks above, rather than treating PNG hashes as
+  // a portable visual equality contract.
+  expect(difference.maxChannelDifference).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
 });
