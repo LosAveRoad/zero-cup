@@ -25,6 +25,13 @@ updates:
         versions: ['19.x']
       - dependency-name: '@types/react'
         versions: ['19.x']
+      - dependency-name: 'react-dom'
+        versions: ['19.x']
+      - dependency-name: '@types/react-dom'
+        versions: ['19.x']
+      # 与 .nvmrc 固定的 Node 22 对齐，类型包不跨大版本跳。
+      - dependency-name: '@types/node'
+        versions: ['>=23']
   - package-ecosystem: github-actions
     directory: /
     schedule:
