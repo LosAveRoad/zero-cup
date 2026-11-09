@@ -97,7 +97,7 @@ for (const direction of ['left-to-right', 'right-to-left'] as const) {
     test.setTimeout(90_000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await expect(page.getByRole('alert')).toHaveCount(0);
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
     await page.getByLabel('笔刷粗细').selectOption('24');

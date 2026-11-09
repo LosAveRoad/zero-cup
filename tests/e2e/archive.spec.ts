@@ -47,7 +47,7 @@ const DEFAULT_PROFILE: ProfilePoint[] = [
  * 应用在 `versionchange` 时会自己关闭连接，删除不会被长期阻塞。
  */
 async function resetDatabase(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/?prologue=skip');
   await page.evaluate(
     ({ databaseName }) =>
       new Promise<void>((resolve, reject) => {

@@ -358,7 +358,7 @@ async function compareExports(
 test.describe('烧制阶段', () => {
   test('烧制期间进度条出现，画廊与新建按钮被锁定', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     // Put one finished piece in the gallery so its buttons exist at all.
@@ -424,7 +424,7 @@ test.describe('烧制阶段', () => {
 
   test('进度条随时间推进，只完成一次且不再回到烧制', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
     await recordProgressValues(page);
     await page.getByRole('button', { name: '入窑烧制' }).click();
@@ -486,7 +486,7 @@ test.describe('烧制阶段', () => {
 test.describe('成品导出', () => {
   test('导出的成品图仍然是 1080×1080 的 PNG', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
     await page.getByLabel('作品名称').fill('尺寸测试青花瓶');
 
@@ -500,7 +500,7 @@ test.describe('成品导出', () => {
 
   test('导出带上作品名、日期与红色印章', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
     await page.getByLabel('作品名称').fill('青花瓶甲');
 
@@ -541,7 +541,7 @@ test.describe('成品导出', () => {
 test.describe('成品机位', () => {
   test('俯仰30° 与特写互斥地切换 aria-pressed', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     const group = page.getByRole('group', { name: '推荐机位' });
@@ -594,7 +594,7 @@ test.describe('成品机位', () => {
 
   test('自由旋转保留用户拖动的视角', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await fireToExhibition(page);
 
     const group = page.getByRole('group', { name: '推荐机位' });
@@ -643,7 +643,7 @@ test.describe('成品机位', () => {
 test.describe('创作闭环', () => {
   test('导出后可以继续彩绘，并再次烧制到成品', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
     // One stroke, so the undo history survives the round trip.
@@ -693,7 +693,7 @@ test.describe('创作闭环', () => {
 
   test('釉面在烧制过程中连续过渡，而不是一次性跳变', async ({ page }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
     // Sample the vessel centre once per animation frame while the kiln runs.
@@ -816,7 +816,8 @@ test.describe('创作闭环', () => {
     page,
   }) => {
     const errors = watchPageErrors(page);
-    await page.goto('/?prologue=1');
+    // No query parameter: this is the path a first-time visitor gets.
+    await page.goto('/');
 
     // Scroll prologue is visible on entry and opens when clicking 入坊造物
     const enterBtn = page.getByRole('button', { name: '入坊造物' });

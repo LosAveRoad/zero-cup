@@ -5,6 +5,10 @@
  * 渲染器读取 `LightRig` 并把它套用到自己的 HemisphereLight / DirectionalLight。
  */
 
+import type { LightingPresetId } from '../../types/artwork';
+
+export type { LightingPresetId };
+
 /** 单盏灯的描述。 */
 export interface LightDescriptor {
   /** 十六进制颜色，形如 '#rrggbb' */
@@ -55,9 +59,6 @@ export const BISQUE_LIGHT_RIG: LightRig = {
   rim: { color: '#cdd8e4', intensity: 0.7, position: [-4, 3, -2] },
   fill: { color: '#eae3d6', intensity: 1.2, position: [-2.6, 1.8, 3.2] },
 };
-
-/** 成品展厅可用的三档布光方案标识。 */
-export type LightingPresetId = 'studio' | 'warm' | 'celadon';
 
 /** 博古暖光：博物馆暖金射灯氛围，突出青花温润包浆感。 */
 export const WARM_LIGHT_RIG: LightRig = {

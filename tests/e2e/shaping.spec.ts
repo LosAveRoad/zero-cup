@@ -339,7 +339,7 @@ test.describe('outline editor: dragging control points', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     const point = page.getByTestId('profile-point-3');
     await expect(point).toHaveAttribute('aria-label', '控制点 4');
@@ -391,7 +391,7 @@ test.describe('outline editor: dragging control points', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     const editor = await page
       .locator('svg[aria-label="器型轮廓编辑器"]')
@@ -427,7 +427,7 @@ test.describe('outline editor: dragging control points', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     const first = page.getByTestId('profile-point-0');
     const last = page.getByTestId('profile-point-7');
@@ -460,7 +460,7 @@ test.describe('outline editor: templates, reset and radius sliders', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     await dragPointBy(page, 'profile-point-3', 40, -20);
     await expect(page.getByTestId('profile-point-3')).not.toHaveAttribute(
@@ -482,7 +482,7 @@ test.describe('outline editor: templates, reset and radius sliders', () => {
   test('choosing a template loads a different outline', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     const before = (await readControlPoints(page)).map((point) => point.radius);
     await page.getByLabel('器型模板').selectOption('cup');
@@ -507,7 +507,7 @@ test.describe('outline editor: templates, reset and radius sliders', () => {
   test('the radius sliders still drive the outline', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     const radius = page.getByLabel('截面 4 半径');
     await radius.fill('0.72');
@@ -526,7 +526,7 @@ test.describe('outline editor: the monotone spline never overshoots', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     // A sharp peak next to a sharp valley: the case in which a naive cubic
     // spline would bulge outside the two radii it interpolates.
@@ -563,7 +563,7 @@ test.describe('outline editor: the monotone spline never overshoots', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     // A narrow neck that opens into the widest radius and drops straight to
     // the narrowest one: the sharpest turn the editor allows.
@@ -590,7 +590,7 @@ test.describe('vessel shape challenges', () => {
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     await page.getByRole('button', { name: '梅瓶', exact: true }).click();
     await expect(
@@ -631,7 +631,7 @@ test.describe('vessel shape challenges', () => {
   test('free creation clears the challenge again', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/');
+    await page.goto('/?prologue=skip');
 
     await page.getByRole('button', { name: '梅瓶', exact: true }).click();
     await expect(page.getByText(/吻合度 \d+%/)).toHaveCount(1);

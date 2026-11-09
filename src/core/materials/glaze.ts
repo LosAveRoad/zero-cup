@@ -6,6 +6,10 @@
  * 由渲染器（studio-renderer.ts）读取并应用到 MeshPhysicalMaterial。
  */
 
+import type { GlazeFinishId } from '../../types/artwork';
+
+export type { GlazeFinishId };
+
 /** 统一的烧制时长（毫秒）。整个应用只有这一个时长常量。 */
 export const FIRING_DURATION_MS = 2500;
 
@@ -46,8 +50,6 @@ export const WHITE_GLAZE_RECIPE: GlazeRecipe = {
   sheen: 0.25,
   sheenColor: '#fff3e2',
 };
-
-export type GlazeFinishId = 'white' | 'celadon' | 'crackle' | 'gilded';
 
 export const CELADON_GLAZE_RECIPE: GlazeRecipe = {
   name: '汝窑天青',

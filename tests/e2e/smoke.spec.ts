@@ -4,7 +4,7 @@ test('shape, draw, fire, download, save, reload and reopen a real artwork', asyn
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await page.goto('/?prologue=skip');
   await expect(
     page.getByRole('heading', { name: '瓷器物语', exact: true }),
   ).toBeVisible();

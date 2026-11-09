@@ -1,9 +1,10 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   encodeCustomStampId,
   extractImageContours,
   type ContourDetailLevel,
 } from '../core/painting/contour';
+import { INKS } from '../core/painting/inks';
 import {
   STAMP_ASSETS,
   STAMP_ROTATION_RANGE,
@@ -54,17 +55,6 @@ const SIZES: { value: number; label: string }[] = [
   { value: 48, label: '粗' },
 ];
 
-const INKS: { value: string; label: string; opacity: number }[] = [
-  { value: '#174a94', label: '浓青', opacity: 1 },
-  { value: '#547fb2', label: '中青', opacity: 0.78 },
-  { value: '#9ab6d5', label: '淡青', opacity: 0.55 },
-];
-
-/** Maps a cobalt ink colour to its traditional water-splitting (分水) opacity. */
-export function inkOpacityFor(color: string): number {
-  return INKS.find((ink) => ink.value === color)?.opacity ?? 1;
-}
-
 /**
  * The current-tool context panel of the painting stage.
  *
@@ -104,17 +94,23 @@ export function ToolPanel({
     useState<ContourDetailLevel>('medium');
   const [contourInvert, setContourInvert] = useState(false);
 
-  const contourPaths = importedImage
-    ? extractImageContours(
-        importedImage.rgba,
-        importedImage.width,
-        importedImage.height,
-        {
-          detail: contourDetail,
-          invert: contourInvert,
-        },
-      )
-    : [];
+  // Extracting contours walks every pixel: keep it off the render path so
+  // dragging a radius slider does not re-run Sobel on each frame.
+  const contourPaths = useMemo(
+    () =>
+      importedImage
+        ? extractImageContours(
+            importedImage.rgba,
+            importedImage.width,
+            importedImage.height,
+            {
+              detail: contourDetail,
+              invert: contourInvert,
+            },
+          )
+        : [],
+    [importedImage, contourDetail, contourInvert],
+  );
   const customStampId =
     contourPaths.length > 0
       ? (encodeCustomStampId(contourPaths) as StampAssetId)
