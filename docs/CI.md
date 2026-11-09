@@ -10,17 +10,30 @@
 - 默认 `contents: read`，无 secrets、不使用 `pull_request_target` 执行 PR 代码。
 - Dependabot 每周检查 npm 与 Actions；PR 按同一检查要求合并。
 
-## 仓库设置（与 YAML 分开）
+## 仓库设置（已于 2026-11-09 实际开启）
 
-工作流文件不会自动禁止合并。维护者需在 Settings → Rules → Rulesets（或 Branches）对 `main` 启用：
+`main` 已启用分支保护，通过 GitHub API 写入并读回确认过：
 
-1. Require a pull request before merging；至少 1 approval、dismiss stale approvals、require conversation resolution。
-2. Require status checks to pass：首次运行后选择 **CI required**，要求 branch up to date。
-3. 禁止 force push 和删除 main；不要设置所有成员都可绕过规则。
-4. 建议只允许 Squash merge、合并后自动删分支。
+1. 必须走 PR 才能合并；**必需审批数 0**；dismiss stale approvals；require conversation resolution。
+2. 必需状态检查 **CI required**，且要求分支与 `main` 同步（strict）。
+3. 禁止 force push 和删除 `main`；管理员同样受约束（`enforce_admins`）。
+4. 线性历史（配合 Squash 合并）、允许 fork 同步。
 
-当前 GitHub 连接没有修改仓库设置的接口，因此这些设置尚未由初始化自动开启；不能把绿灯视为已有强制门禁。若 Actions 因账户/仓库策略禁用或 workflow 写权限被拒绝，需要维护者处理后重新运行。
+另外开启了仓库级 auto-merge 与「合并后自动删除分支」。
+
+### 为什么必需审批数是 0
+
+GitHub **不允许 PR 作者 approve 自己的 PR**（报错 `Review Can not approve your own pull request`）。所以只要必需审批数 ≥ 1，就必然需要第二个人在场；当前团队规模下这会让单人推进完全卡住。
+
+设为 0 之后，门禁的实际形态是：**改动必须走 PR、必须等 CI 全绿、讨论必须解决、禁止强推与删分支**，而 review 变成可选——想看的人照常提 review，不提也能合并。若团队人数增加、希望恢复「至少一位他人审批」，把 `required_approving_review_count` 调回 1 即可。
+
+### 验证过门禁确实在拦
+
+- 带一个提交直接推 `main` → `remote rejected (protected branch hook declined)`，远端提示 `Changes must be made through a pull request.` 与 `Required status check "CI required" is expected.`
+- `PATCH /git/refs/heads/main` → `422 Changes must be made through a pull request.`
 
 ## 故障排查
 
 锁文件变化后使用 `npm ci` 验证干净安装。格式失败运行 `npm run format`；类型与 lint 修复源代码；浏览器失败下载 Actions 的 playwright-report，检查 trace。不要跳过 CI、删除测试或降低门槛来合并。
+
+浏览器作业已拆成两个 Playwright 分片（`--shard=1/2`、`--shard=2/2`）跑在两个 runner 上，`fail-fast: false`，两个分片都通过 `CI required` 才算绿。这样单个作业不会撞上 15 分钟上限。
