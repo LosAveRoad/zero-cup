@@ -23,13 +23,30 @@ export interface SampledProfilePoint {
   height: number;
 }
 
-/** Preset silhouettes; every entry satisfies PROFILE_LIMITS. */
+export interface VesselMetrics {
+  footRadius: number;
+  bellyRadius: number;
+  bellyHeight: number;
+  mouthRadius: number;
+  slenderness: number;
+  volumeMl: number;
+  stabilityScore: number;
+}
+
+/** Preset silhouettes; bottle/meiping/cup match the three challenge targets. */
 const TEMPLATE_RADII: Record<ProfileTemplateId, readonly number[]> = {
-  bottle: [0.3, 0.42, 0.52, 0.56, 0.44, 0.24, 0.17, 0.23],
-  meiping: [0.32, 0.5, 0.62, 0.6, 0.5, 0.4, 0.28, 0.16],
-  cup: [0.26, 0.34, 0.44, 0.56, 0.68, 0.78, 0.85, 0.88],
+  bottle: [0.22, 0.34, 0.52, 0.56, 0.4, 0.2, 0.17, 0.26],
+  meiping: [0.2, 0.3, 0.42, 0.54, 0.62, 0.56, 0.26, 0.15],
+  cup: [0.3, 0.4, 0.48, 0.54, 0.58, 0.62, 0.66, 0.7],
   melon: [0.28, 0.46, 0.6, 0.64, 0.56, 0.46, 0.36, 0.28],
 };
+
+const TEMPLATE_KEYS: readonly ProfileTemplateId[] = [
+  'bottle',
+  'meiping',
+  'cup',
+  'melon',
+];
 
 /**
  * Slack used when comparing heights. A sum such as `0.3 + 0.05` can land a
@@ -64,6 +81,28 @@ export function createTemplateProfile(
     height: i / (radii.length - 1),
     radius,
   }));
+}
+
+/**
+ * Returns the template id whose control points match `points`, or `''` when
+ * the outline has been customized or reset to the default profile.
+ */
+export function matchTemplateId(
+  points: ProfileControlPoint[],
+): ProfileTemplateId | '' {
+  for (const kind of TEMPLATE_KEYS) {
+    const radii = TEMPLATE_RADII[kind];
+    if (points.length !== radii.length) continue;
+    const matches = points.every((point, index) => {
+      const expectedHeight = index / (radii.length - 1);
+      return (
+        Math.abs(point.height - expectedHeight) <= 1e-6 &&
+        Math.abs(point.radius - radii[index]) <= 1e-6
+      );
+    });
+    if (matches) return kind;
+  }
+  return '';
 }
 
 /** Throws when the outline could not be turned into a valid lathe profile. */
@@ -269,4 +308,51 @@ export function moveControlPoint(
   }
   moved[index] = { ...current, height, radius };
   return moved;
+}
+
+/**
+ * Computes physical and geometric indicators for the vessel outline using
+ * trapezoidal integration over the sampled monotone spline.
+ */
+export function computeVesselMetrics(
+  points: ProfileControlPoint[],
+): VesselMetrics {
+  const sampled = sampleProfile(points, 64);
+  const footRadius = sampled[0].radius;
+  const mouthRadius = sampled[sampled.length - 1].radius;
+  let bellyRadius = footRadius;
+  let bellyHeight = 0;
+  let areaIntegral = 0;
+  let momentIntegral = 0;
+  for (let i = 0; i < sampled.length; i++) {
+    const sample = sampled[i];
+    if (sample.radius > bellyRadius) {
+      bellyRadius = sample.radius;
+      bellyHeight = sample.height;
+    }
+    if (i > 0) {
+      const prev = sampled[i - 1];
+      const dh = sample.height - prev.height;
+      const r2Avg =
+        0.5 * (prev.radius * prev.radius + sample.radius * sample.radius);
+      const hAvg = 0.5 * (prev.height + sample.height);
+      areaIntegral += r2Avg * dh;
+      momentIntegral += hAvg * r2Avg * dh;
+    }
+  }
+  const centerOfMass = momentIntegral / areaIntegral;
+  const slenderness = Number((1 / (2 * bellyRadius)).toFixed(2));
+  const volumeMl = Math.round(Math.PI * areaIntegral * 750);
+  const stabilityScore = Math.round(
+    clamp((footRadius / bellyRadius) * 65 + (1 - centerOfMass) * 65, 25, 99),
+  );
+  return {
+    footRadius,
+    bellyRadius,
+    bellyHeight,
+    mouthRadius,
+    slenderness,
+    volumeMl,
+    stabilityScore,
+  };
 }

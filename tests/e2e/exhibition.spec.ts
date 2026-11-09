@@ -811,4 +811,59 @@ test.describe('创作闭环', () => {
 
     expect(errors).toEqual([]);
   });
+
+  test('卷轴序幕、彩绘毛笔水晕与成品阶段小金属棒五声轻叩听音', async ({
+    page,
+  }) => {
+    const errors = watchPageErrors(page);
+    await page.goto('/?prologue=1');
+
+    // Scroll prologue is visible on entry and opens when clicking 入坊造物
+    const enterBtn = page.getByRole('button', { name: '入坊造物' });
+    await expect(enterBtn).toBeVisible();
+    await enterBtn.click();
+    await expect(page.locator('.scroll-prologue.is-open')).toHaveCount(1);
+
+    // Painting stage shows the miniature calligraphy brush reticle
+    await page.getByRole('button', { name: '定型进入彩绘' }).click();
+    const canvas = page.getByLabel('三维陶器画布');
+    const rect = (await canvas.boundingBox())!;
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'brush-reticle');
+    await expect(page.locator('.calligraphy-brush-reticle')).toHaveCount(1);
+
+    // Importing an image extracts its contours and imprints onto the vessel
+    const sampleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#fff"/><circle cx="40" cy="40" r="24" fill="#000"/></svg>`;
+    await page.getByLabel('导入图案图片').setInputFiles({
+      name: 'motif.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from(sampleSvg, 'utf-8'),
+    });
+    await expect(page.getByLabel('导入图案青花轮廓预览')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: '导入图样' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
+
+    await page.getByRole('button', { name: '入窑烧制' }).click();
+    await expect(page.getByRole('heading', { name: '成品工作台' })).toBeVisible(
+      { timeout: 10_000 },
+    );
+
+    // Hovering over the center of the finished porcelain switches to the metal rod cursor
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'metal-rod');
+
+    // Clicking on the porcelain strikes one pentatonic note and spawns an upward-floating note glyph
+    await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await expect(canvas).toHaveAttribute('data-cursor', 'metal-rod');
+    await expect(page.locator('.chime-note-glyph')).toHaveCount(1);
+    await expect(page.locator('.scene-hint')).toContainText('轻叩瓷身奏响五声');
+
+    // Moving to the far corner outside the vessel clears the metal rod cursor
+    await page.mouse.move(rect.x + 12, rect.y + 12);
+    await expect(canvas).not.toHaveAttribute('data-cursor', 'metal-rod');
+
+    expect(errors).toEqual([]);
+  });
 });

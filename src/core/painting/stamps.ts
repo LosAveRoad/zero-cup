@@ -21,8 +21,10 @@
  * same asset id.
  */
 
-/** Identifiers of the three built-in stamp motifs. */
-export type StampAssetId = 'lotus' | 'seaside' | 'cloud';
+import { CUSTOM_STAMP_SIZE, decodeCustomStampId } from './contour';
+
+/** Identifiers of the built-in stamp motifs plus custom imported contour stamps. */
+export type StampAssetId = 'lotus' | 'seaside' | 'cloud' | `custom:${string}`;
 
 /** A selectable stamp motif as shown in the tool panel. */
 export interface StampAsset {
@@ -86,14 +88,25 @@ const TAU = Math.PI * 2;
 
 /** Look a motif up by id; unknown ids resolve to `undefined`. */
 export function getStampAsset(id: string): StampAsset | undefined {
-  return STAMP_ASSETS.find((asset) => asset.id === id);
+  const builtin = STAMP_ASSETS.find((asset) => asset.id === id);
+  if (builtin) return builtin;
+  if (decodeCustomStampId(id)) {
+    return {
+      id: id as StampAssetId,
+      name: '导入图样',
+      description: '导入图片提取的青花轮廓纹样。',
+      size: CUSTOM_STAMP_SIZE,
+    };
+  }
+  return undefined;
 }
 
 /** Build the deterministic geometry of one motif. */
 export function buildStampGeometry(id: StampAssetId): StampGeometry {
   if (id === 'lotus') return { paths: lotusPaths() };
   if (id === 'seaside') return { paths: seasidePaths() };
-  return { paths: cloudPaths() };
+  if (id === 'cloud') return { paths: cloudPaths() };
+  return decodeCustomStampId(id) ?? { paths: [] };
 }
 
 /**

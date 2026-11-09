@@ -56,6 +56,38 @@ export const BISQUE_LIGHT_RIG: LightRig = {
   fill: { color: '#eae3d6', intensity: 1.2, position: [-2.6, 1.8, 3.2] },
 };
 
+/** 成品展厅可用的三档布光方案标识。 */
+export type LightingPresetId = 'studio' | 'warm' | 'celadon';
+
+/** 博古暖光：博物馆暖金射灯氛围，突出青花温润包浆感。 */
+export const WARM_LIGHT_RIG: LightRig = {
+  ambient: { sky: '#fff5e4', ground: '#78624d', intensity: 1.45 },
+  key: { color: '#ffe8c8', intensity: 4.5, position: [3.4, 4.8, 3.8] },
+  rim: { color: '#ffd4a3', intensity: 2.2, position: [-3.8, 3.2, -2.2] },
+  fill: { color: '#f7e5ce', intensity: 1.05, position: [-2.4, 2.0, 3.0] },
+};
+
+/** 天青雅光：清冷雨过天青光泽，强化高光白釉与钴蓝对比。 */
+export const CELADON_LIGHT_RIG: LightRig = {
+  ambient: { sky: '#e3f2ff', ground: '#596873', intensity: 1.3 },
+  key: { color: '#f2f8ff', intensity: 4.1, position: [2.8, 5.2, 4.2] },
+  rim: { color: '#8ac2ff', intensity: 3.0, position: [-4.2, 3.4, -1.8] },
+  fill: { color: '#d0e6f8', intensity: 0.85, position: [-2.8, 1.6, 3.4] },
+};
+
+export const EXHIBITION_LIGHT_PRESETS: Record<LightingPresetId, LightRig> = {
+  studio: STUDIO_LIGHT_RIG,
+  warm: WARM_LIGHT_RIG,
+  celadon: CELADON_LIGHT_RIG,
+};
+
+/** 获取成品展厅指定预设的灯光配置（默认返回标准展厅光位）。 */
+export function exhibitionRigFor(
+  preset: LightingPresetId = 'studio',
+): LightRig {
+  return EXHIBITION_LIGHT_PRESETS[preset] ?? STUDIO_LIGHT_RIG;
+}
+
 /**
  * 线性插值。端点直接返回原值，保证 t=0 / t=1 时与原始配方完全一致，
  * 不会出现 1 + (2 - 1) * 1 !== 2 这类浮点误差。

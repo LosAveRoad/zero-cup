@@ -1,4 +1,8 @@
-import type { PaintingAction, UVPoint } from '../../types/artwork';
+import type {
+  PaintingAction,
+  SymmetryCount,
+  UVPoint,
+} from '../../types/artwork';
 
 /**
  * Factories for the persisted painting command union.
@@ -9,15 +13,24 @@ import type { PaintingAction, UVPoint } from '../../types/artwork';
  */
 export function brushAction(
   path: UVPoint[],
-  options: { size: number; color: string; opacity?: number },
+  options: {
+    size: number;
+    color: string;
+    opacity?: number;
+    symmetry?: SymmetryCount;
+  },
 ): PaintingAction {
-  return {
+  const base: PaintingAction = {
     type: 'BRUSH',
     path: path.map((point) => ({ ...point })),
     color: options.color,
     opacity: options.opacity ?? 1,
     size: options.size,
   };
+  if (options.symmetry && options.symmetry > 1) {
+    base.symmetry = options.symmetry;
+  }
+  return base;
 }
 
 export function eraseAction(path: UVPoint[], size: number): PaintingAction {
@@ -32,9 +45,10 @@ export function stampAction(
     color: string;
     scale?: number;
     rotation?: number;
+    symmetry?: SymmetryCount;
   },
 ): PaintingAction {
-  return {
+  const base: PaintingAction = {
     type: 'STAMP',
     u,
     v,
@@ -43,6 +57,10 @@ export function stampAction(
     scale: options.scale ?? 1,
     rotation: options.rotation ?? 0,
   };
+  if (options.symmetry && options.symmetry > 1) {
+    base.symmetry = options.symmetry;
+  }
+  return base;
 }
 
 /** The dragged path of a brush or erase command; stamps have no path. */

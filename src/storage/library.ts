@@ -26,6 +26,7 @@ import type {
   PaintingAction,
   ProfileControlPoint,
   StudioArtworkV2,
+  SymmetryCount,
   UVPoint,
 } from '../types/artwork';
 
@@ -252,6 +253,11 @@ function validatePath(raw: unknown): UVPoint[] {
   });
 }
 
+function parseSymmetry(raw: unknown): SymmetryCount | undefined {
+  if (raw === 2 || raw === 4 || raw === 6 || raw === 8) return raw;
+  return undefined;
+}
+
 function validateActions(raw: unknown): PaintingAction[] {
   if (!Array.isArray(raw)) throw corrupt('彩绘命令缺失');
   return raw.map((action) => {
@@ -270,12 +276,14 @@ function validateActions(raw: unknown): PaintingAction[] {
         if (!isFiniteNumber(action.size) || action.size <= 0) {
           throw corrupt('画笔粗细无效');
         }
+        const symmetry = parseSymmetry(action.symmetry);
         return {
           type: 'BRUSH',
           path,
           color: action.color,
           opacity: action.opacity,
           size: action.size,
+          ...(symmetry ? { symmetry } : {}),
         };
       }
       case 'STAMP': {
@@ -290,6 +298,7 @@ function validateActions(raw: unknown): PaintingAction[] {
           throw corrupt('印章缩放无效');
         }
         if (!isFiniteNumber(action.rotation)) throw corrupt('印章旋转无效');
+        const symmetry = parseSymmetry(action.symmetry);
         return {
           type: 'STAMP',
           u: action.u,
@@ -298,6 +307,7 @@ function validateActions(raw: unknown): PaintingAction[] {
           color: action.color,
           scale: action.scale,
           rotation: action.rotation,
+          ...(symmetry ? { symmetry } : {}),
         };
       }
       case 'ERASE': {

@@ -36,6 +36,12 @@ describe('stamp asset catalogue', () => {
     expect(getStampAsset('cloud')).toBe(STAMP_ASSETS[2]);
     expect(getStampAsset('nope')).toBeUndefined();
     expect(getStampAsset('')).toBeUndefined();
+    const customId = 'custom:0,40:-300,-200;300,200' as const;
+    expect(getStampAsset(customId)?.name).toBe('导入图样');
+    expect(buildStampGeometry(customId).paths).toHaveLength(1);
+    expect(
+      buildStampGeometry('custom:invalid' as StampAssetId).paths,
+    ).toHaveLength(0);
   });
 });
 

@@ -9,6 +9,7 @@ import { createStudio, type StudioOptions } from './studio-renderer';
 export interface ViewportHandle {
   snapshot(name: string): Promise<Blob>;
   texture(): Promise<Blob>;
+  frontU(): number;
 }
 export const Viewport = forwardRef<ViewportHandle, StudioOptions>(
   function Viewport(options, ref) {
@@ -40,6 +41,7 @@ export const Viewport = forwardRef<ViewportHandle, StudioOptions>(
           if (!studio.current) throw new Error('三维视口尚未就绪');
           return studio.current.texture();
         },
+        frontU: () => studio.current?.frontU() ?? 0.125,
       }),
       [],
     );

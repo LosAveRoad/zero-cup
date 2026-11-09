@@ -11,6 +11,7 @@ export interface UVPoint {
 
 /** The mutually exclusive painting tools of the studio. */
 export type PaintTool = 'brush' | 'eraser' | 'stamp';
+export type SymmetryCount = 1 | 2 | 4 | 6 | 8;
 export type PaintingAction =
   | {
       type: 'BRUSH';
@@ -18,6 +19,7 @@ export type PaintingAction =
       color: string;
       opacity: number;
       size: number;
+      symmetry?: SymmetryCount;
     }
   | {
       type: 'STAMP';
@@ -27,6 +29,7 @@ export type PaintingAction =
       color: string;
       scale: number;
       rotation: number;
+      symmetry?: SymmetryCount;
     }
   | { type: 'ERASE'; path: UVPoint[]; size: number };
 export interface ArtworkMetadata {

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { ProfileControlPoint } from '../../types/artwork';
 import {
   PROFILE_LIMITS,
+  computeVesselMetrics,
   createProfile,
   createTemplateProfile,
+  matchTemplateId,
   moveControlPoint,
   normalizeProfile,
   sampleProfile,
@@ -89,6 +91,22 @@ describe('profile defaults and limits', () => {
     expect(() => createTemplateProfile('missing' as ProfileTemplateId)).toThrow(
       'Unknown profile template',
     );
+  });
+
+  it('recognizes matching template outlines and returns empty for custom ones', () => {
+    for (const kind of TEMPLATE_IDS) {
+      expect(matchTemplateId(createTemplateProfile(kind))).toBe(kind);
+    }
+    expect(matchTemplateId(createProfile())).toBe('');
+    expect(matchTemplateId([])).toBe('');
+    const tweaked = moveControlPoint(
+      createTemplateProfile('meiping'),
+      'point-3',
+      {
+        radius: 0.75,
+      },
+    );
+    expect(matchTemplateId(tweaked)).toBe('');
   });
 });
 
@@ -481,5 +499,23 @@ describe('moving a control point', () => {
     const sampled = sampleProfile(moved);
     for (const sample of sampled)
       expect(sample.radius).toBeGreaterThanOrEqual(PROFILE_LIMITS.minRadius);
+  });
+});
+
+describe('computeVesselMetrics', () => {
+  it('computes volume, slenderness, belly height and stability for preset vessels', () => {
+    const bottle = computeVesselMetrics(createTemplateProfile('bottle'));
+    const meiping = computeVesselMetrics(createTemplateProfile('meiping'));
+    expect(bottle.footRadius).toBeCloseTo(0.22, 5);
+    expect(bottle.mouthRadius).toBeCloseTo(0.26, 5);
+    expect(bottle.bellyRadius).toBeCloseTo(0.56, 3);
+    expect(bottle.bellyHeight).toBeGreaterThan(0.3);
+    expect(bottle.bellyHeight).toBeLessThan(0.55);
+    expect(bottle.volumeMl).toBeGreaterThan(200);
+    expect(bottle.slenderness).toBeGreaterThan(0.7);
+    expect(bottle.stabilityScore).toBeGreaterThanOrEqual(25);
+    expect(bottle.stabilityScore).toBeLessThanOrEqual(99);
+    // Meiping has its widest shoulder higher than Yuhuchun's low belly
+    expect(meiping.bellyHeight).toBeGreaterThan(bottle.bellyHeight);
   });
 });
