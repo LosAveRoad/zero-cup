@@ -327,6 +327,14 @@ select {
   height: 100%;
 }
 
+.viewport .film-preview {
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
+  background: #111f2a;
+  pointer-events: none;
+}
+
 .viewport [role='alert'] {
   padding: 30px;
 }
@@ -451,6 +459,18 @@ select {
   background: #f6efe6;
   border: 1px solid #e0cfba;
   border-radius: 8px;
+}
+
+.video-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-progress progress {
+  width: 100%;
+  accent-color: var(--cobalt-ink);
 }
 
 .camera-controls {

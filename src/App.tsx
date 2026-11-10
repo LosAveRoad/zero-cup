@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Viewport, type ViewportHandle } from './components/Viewport';
 import { CameraPanel } from './components/CameraPanel';
+import { FilmError } from './components/record-film';
 import { ChallengePanel } from './components/ChallengePanel';
 import { FiringPanel } from './components/FiringPanel';
 import { ProfileEditor } from './components/ProfileEditor';
@@ -112,6 +113,15 @@ function ArtworkCard({
     </article>
   );
 }
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function App() {
   const [profile, setProfile] = useState(createProfile);
   const [history, setHistory] = useState(createHistory);
@@ -152,6 +162,8 @@ export function App() {
   const [gallery, setGallery] = useState<StudioArtworkV2[]>([]);
   const [damaged, setDamaged] = useState<DamagedRecord[]>([]);
   const [busy, setBusy] = useState(false);
+  const [videoProgress, setVideoProgress] = useState<number>();
+  const videoJob = useRef<AbortController>();
   const viewport = useRef<ViewportHandle>(null);
   const currentId = useRef<string>(crypto.randomUUID());
   const soundEnabledRef = useRef(soundEnabled);
@@ -287,12 +299,7 @@ export function App() {
     setBusy(true);
     try {
       const blob = await viewport.current!.snapshot(name);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'porcelain-tales.png';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(blob, 'porcelain-tales.png');
       setNotice('1080×1080 PNG 已导出。');
     } catch {
       setNotice('图片导出失败，请重试。');
@@ -300,6 +307,32 @@ export function App() {
       setBusy(false);
     }
   }
+  async function generateVideo() {
+    if (busy || videoJob.current) return;
+    const job = new AbortController();
+    videoJob.current = job;
+    setBusy(true);
+    setVideoProgress(0);
+    setNotice('正在生成演示视频，请保持此页面在前台。');
+    try {
+      const result = await viewport.current!.video({
+        name,
+        signal: job.signal,
+        onProgress: setVideoProgress,
+      });
+      downloadBlob(result.blob, `porcelain-tales.${result.extension}`);
+      setNotice(`演示视频已导出（${result.extension.toUpperCase()}）。`);
+    } catch (error) {
+      if (job.signal.aborted) setNotice('已取消视频生成。');
+      else if (error instanceof FilmError) setNotice(error.message);
+      else setNotice('视频生成失败，请重试。');
+    } finally {
+      videoJob.current = undefined;
+      setVideoProgress(undefined);
+      setBusy(false);
+    }
+  }
+
   async function save() {
     setBusy(true);
     try {
@@ -721,6 +754,7 @@ export function App() {
                 <input
                   aria-label="作品名称"
                   maxLength={60}
+                  disabled={videoProgress !== undefined}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -728,6 +762,25 @@ export function App() {
               <button disabled={busy} onClick={() => void download()}>
                 下载 PNG
               </button>
+              <button disabled={busy} onClick={() => void generateVideo()}>
+                生成演示视频
+              </button>
+              {videoProgress !== undefined && (
+                <div className="video-progress">
+                  <progress
+                    aria-label="视频生成进度"
+                    max={100}
+                    value={videoProgress}
+                  />
+                  <button
+                    className="quiet"
+                    type="button"
+                    onClick={() => videoJob.current?.abort()}
+                  >
+                    取消生成
+                  </button>
+                </div>
+              )}
               <button disabled={busy} onClick={() => void save()}>
                 保存到藏品
               </button>
@@ -786,7 +839,7 @@ export function App() {
             <button
               type="button"
               className="scene-pill"
-              disabled={stage === 'firing'}
+              disabled={stage === 'firing' || videoProgress !== undefined}
               onClick={() => setPrologueDismissed(false)}
             >
               ❖ 卷轴序幕
@@ -795,7 +848,7 @@ export function App() {
               type="button"
               className="scene-pill"
               aria-pressed={autoRotate}
-              disabled={stage === 'firing'}
+              disabled={stage === 'firing' || videoProgress !== undefined}
               onClick={() => {
                 const next = !autoRotate;
                 setAutoRotate(next);
@@ -810,6 +863,7 @@ export function App() {
               type="button"
               className="scene-pill"
               aria-pressed={wireframe}
+              disabled={videoProgress !== undefined}
               onClick={() => setWireframe(!wireframe)}
             >
               {wireframe ? '◈ 隐藏拓扑网格' : '◇ 数学网格透视'}

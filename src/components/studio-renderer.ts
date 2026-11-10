@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createExhibitionScene } from './exhibition-scene';
+import { drawFilmFrame, FILM_HEIGHT, FILM_WIDTH } from './exhibition-film';
+import { FilmError, recordFilm, type FilmOptions } from './record-film';
 import { sampleProfile } from '../core/geometry/profile';
 import {
   brushAction,
@@ -109,6 +111,8 @@ export function createStudio(host: HTMLDivElement) {
   renderer.domElement.style.touchAction = 'none';
   host.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
+  const lifetime = new AbortController();
+  let filming = false;
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   camera.position.set(4, 2.7, 5);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -903,6 +907,7 @@ export function createStudio(host: HTMLDivElement) {
   }
 
   function down(event: PointerEvent) {
+    if (filming) return;
     if (!options?.painting) {
       if (options && options.glaze >= 1 && event.button === 0) {
         const hitPoint = hit(event);
@@ -977,6 +982,7 @@ export function createStudio(host: HTMLDivElement) {
   }
 
   function move(event: PointerEvent) {
+    if (filming) return;
     if (!draft && !options?.painting && options && options.glaze >= 1) {
       if (event.buttons === 0) {
         const hitPoint = hit(event);
@@ -1104,17 +1110,21 @@ export function createStudio(host: HTMLDivElement) {
   renderer.domElement.addEventListener('pointercancel', cancel);
   renderer.domElement.addEventListener('pointerleave', leave);
   renderer.domElement.addEventListener('contextmenu', suppressContextMenu);
-  const observer = new ResizeObserver(() => {
+  function resizePreview() {
     const w = host.clientWidth,
       h = host.clientHeight;
     renderer.setSize(w, h);
     camera.aspect = w / Math.max(h, 1);
     camera.updateProjectionMatrix();
+  }
+  const observer = new ResizeObserver(() => {
+    if (!filming) resizePreview();
   });
   observer.observe(host);
   let frame = 0;
   function animate() {
     frame = requestAnimationFrame(animate);
+    if (filming) return;
     controls.update();
     renderer.render(scene, camera);
   }
@@ -1160,6 +1170,7 @@ export function createStudio(host: HTMLDivElement) {
   }
 
   function update(next: StudioOptions) {
+    if (filming) return;
     if (options?.painting && !next.painting) finish(true);
     if (!next.painting) hideCursor();
     options = next;
@@ -1240,6 +1251,68 @@ export function createStudio(host: HTMLDivElement) {
         camera.fov = pose.fov;
         camera.updateProjectionMatrix();
         controls.update();
+      }
+    }
+  }
+
+  async function video(options: FilmOptions) {
+    if (filming) throw new FilmError('正在生成视频，请稍候。');
+    const pixelRatio = renderer.getPixelRatio();
+    const previousControls = controls.enabled;
+    const previousWireframe = wireframeMesh.visible;
+    const signal = AbortSignal.any([options.signal, lifetime.signal]);
+    const filmCamera = new THREE.PerspectiveCamera(
+      38,
+      FILM_WIDTH / FILM_HEIGHT,
+      camera.near,
+      camera.far,
+    );
+    const title = options.name.trim() || '未命名作品';
+    const frontAzimuth = Math.atan2(
+      camera.position.x - controls.target.x,
+      camera.position.z - controls.target.z,
+    );
+    filming = true;
+    try {
+      hideCursor();
+      tapStart = undefined;
+      controls.enabled = false;
+      wireframeMesh.visible = false;
+      renderer.setPixelRatio(1);
+      renderer.setSize(FILM_WIDTH, FILM_HEIGHT, false);
+      if (repaintQueued) {
+        cancelAnimationFrame(repaintFrame);
+        repaintQueued = false;
+        composite();
+      }
+      return await recordFilm({ ...options, signal }, host, (ctx, elapsed) => {
+        drawFilmFrame(
+          ctx,
+          elapsed,
+          title,
+          ([azimuth, elevation, distance, target]) => {
+            if (renderer.getContext().isContextLost()) {
+              throw new FilmError('三维视口已断开，请刷新页面后重试。');
+            }
+            const horizontal = Math.cos(elevation) * distance;
+            filmCamera.position.set(
+              Math.sin(frontAzimuth + azimuth) * horizontal,
+              target + Math.sin(elevation) * distance,
+              Math.cos(frontAzimuth + azimuth) * horizontal,
+            );
+            filmCamera.lookAt(0, target, 0);
+            renderer.render(scene, filmCamera);
+            return renderer.domElement;
+          },
+        );
+      });
+    } finally {
+      filming = false;
+      if (!lifetime.signal.aborted) {
+        controls.enabled = previousControls;
+        wireframeMesh.visible = previousWireframe;
+        renderer.setPixelRatio(pixelRatio);
+        resizePreview();
       }
     }
   }
@@ -1331,9 +1404,11 @@ export function createStudio(host: HTMLDivElement) {
   return {
     update,
     snapshot,
+    video,
     texture: paintTexture,
     frontU,
     dispose() {
+      lifetime.abort();
       cancelAnimationFrame(frame);
       cancelAnimationFrame(repaintFrame);
       window.clearTimeout(strikeResetTimer);

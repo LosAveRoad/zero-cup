@@ -6,8 +6,10 @@ import {
   useState,
 } from 'react';
 import { createStudio, type StudioOptions } from './studio-renderer';
+import type { FilmOptions, recordFilm } from './record-film';
 export interface ViewportHandle {
   snapshot(name: string): Promise<Blob>;
+  video(options: FilmOptions): ReturnType<typeof recordFilm>;
   texture(): Promise<Blob>;
   frontU(): number;
 }
@@ -36,6 +38,10 @@ export const Viewport = forwardRef<ViewportHandle, StudioOptions>(
         snapshot: async (name) => {
           if (!studio.current) throw new Error('三维视口尚未就绪');
           return studio.current.snapshot(name);
+        },
+        video: async (options) => {
+          if (!studio.current) throw new Error('三维视口尚未就绪');
+          return studio.current.video(options);
         },
         texture: async () => {
           if (!studio.current) throw new Error('三维视口尚未就绪');
