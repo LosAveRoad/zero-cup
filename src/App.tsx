@@ -162,6 +162,7 @@ export function App() {
   const [gallery, setGallery] = useState<StudioArtworkV2[]>([]);
   const [damaged, setDamaged] = useState<DamagedRecord[]>([]);
   const [busy, setBusy] = useState(false);
+  const [multipleScenes, setMultipleScenes] = useState(true);
   const [videoProgress, setVideoProgress] = useState<number>();
   const videoJob = useRef<AbortController>();
   const viewport = useRef<ViewportHandle>(null);
@@ -317,6 +318,7 @@ export function App() {
     try {
       const result = await viewport.current!.video({
         name,
+        multipleScenes,
         signal: job.signal,
         onProgress: setVideoProgress,
       });
@@ -762,6 +764,15 @@ export function App() {
               <button disabled={busy} onClick={() => void download()}>
                 下载 PNG
               </button>
+              <label className="film-scenes">
+                <input
+                  type="checkbox"
+                  checked={multipleScenes}
+                  disabled={busy}
+                  onChange={(event) => setMultipleScenes(event.target.checked)}
+                />
+                串联三个展陈场景
+              </label>
               <button disabled={busy} onClick={() => void generateVideo()}>
                 生成演示视频
               </button>

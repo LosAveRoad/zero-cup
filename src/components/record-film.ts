@@ -16,6 +16,7 @@ class FilmEncodingError extends FilmError {
 
 export interface FilmOptions {
   name: string;
+  multipleScenes: boolean;
   signal: AbortSignal;
   onProgress: (percent: number) => void;
 }

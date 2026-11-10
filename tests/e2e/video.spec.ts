@@ -1,5 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function downloadPng(page: Page): Promise<Buffer> {
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下载 PNG' }).click();
+  return readFile((await (await pending).path())!);
+}
 
 test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', async ({ page }) => {
   test.setTimeout(90_000);
@@ -14,13 +20,23 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
   await expect(generate).toBeVisible({ timeout: 12_000 });
   await page.getByRole('button', { name: '月门夜庭' }).click();
 
+  const multipleScenes = page.getByRole('checkbox', {
+    name: '串联三个展陈场景',
+  });
+  await expect(multipleScenes).toBeChecked();
+  const originalPng = await downloadPng(page);
   await generate.click();
-  await expect(
-    page.getByRole('progressbar', { name: '视频生成进度' }),
-  ).toBeVisible();
+  const progress = page.getByRole('progressbar', { name: '视频生成进度' });
+  // Cancel after the renderer has switched from the exhibition's initial theme.
+  await expect
+    .poll(async () => Number(await progress.getAttribute('value')), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThanOrEqual(30);
   await page.getByRole('button', { name: '取消生成' }).click();
   await expect(page.getByRole('status')).toContainText('已取消视频生成');
 
+  expect((await downloadPng(page)).equals(originalPng)).toBe(true);
   const videoDownload = page.waitForEvent('download');
   await generate.click();
   const movie = await videoDownload;
@@ -58,7 +74,7 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
         await loaded;
         await video.play();
         video.pause();
-        for (const timestamp of [1, 4.6, 7.4, 10.8]) {
+        for (const timestamp of [1, 3.1, 4.6, 6.2, 7.4, 10.8]) {
           const seeked = waitForFrame('seeked');
           video.currentTime = timestamp;
           await seeked;
@@ -92,7 +108,7 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
   );
   expect([result.width, result.height]).toEqual([1280, 720]);
   expect(result.endTime).toBeGreaterThanOrEqual(10.7);
-  expect(result.samples).toHaveLength(4);
+  expect(result.samples).toHaveLength(6);
   // The first frame's selected backdrop is dark blue, with a bright subtitle
   // in the lower safe area above the trim line.
   const skyIndex = (3 * 32 + 28) * 4;
@@ -100,6 +116,14 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
   expect(opening[skyIndex]).toBeLessThan(80);
   expect(opening[skyIndex + 2] - opening[skyIndex]).toBeGreaterThan(12);
   expect(result.captionPixels).toBeGreaterThan(10);
+  const [, firstTransition, ink, secondTransition, lattice, outro] =
+    result.samples;
+  expect(ink[skyIndex]).toBeGreaterThan(130);
+  expect(lattice[skyIndex] - lattice[skyIndex + 2]).toBeGreaterThan(12);
+  // The vessel stays visible in the middle of both dissolves.
+  const vesselIndex = (8 * 32 + 16) * 4;
+  expect(firstTransition[vesselIndex]).toBeGreaterThan(125);
+  expect(secondTransition[vesselIndex]).toBeGreaterThan(125);
   for (let i = 1; i < result.samples.length; i++) {
     const previous = result.samples[i - 1];
     const difference = result.samples[i].reduce(
@@ -108,15 +132,17 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
     );
     expect(difference).toBeGreaterThan(6_000);
   }
-  const outro = result.samples[3];
   const sealPixels = outro.filter(
     (value, i) => i % 4 === 0 && value > 105 && value > 1.8 * outro[i + 1],
   );
   expect(sealPixels.length).toBeGreaterThan(0);
 
-  const imageDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: '下载 PNG' }).click();
-  const png = await readFile((await (await imageDownload).path())!);
+  await expect(page.getByRole('button', { name: '月门夜庭' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const png = await downloadPng(page);
+  expect(png.equals(originalPng)).toBe(true);
   expect(png.readUInt32BE(16)).toBe(1080);
   expect(png.readUInt32BE(20)).toBe(1080);
   expect(errors).toEqual([]);

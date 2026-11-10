@@ -278,7 +278,7 @@ input[type='range'] {
   cursor: pointer;
 }
 
-input:not([type='range']),
+input:not([type='range'], [type='checkbox']),
 select {
   width: 100%;
   padding: 9px 11px;
@@ -459,6 +459,15 @@ select {
   background: #f6efe6;
   border: 1px solid #e0cfba;
   border-radius: 8px;
+}
+
+.film-scenes {
+  flex-direction: row;
+  align-items: center;
+}
+
+.film-scenes input {
+  accent-color: var(--cobalt-ink);
 }
 
 .video-progress {

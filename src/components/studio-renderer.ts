@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createExhibitionScene } from './exhibition-scene';
-import { drawFilmFrame, FILM_HEIGHT, FILM_WIDTH } from './exhibition-film';
+import {
+  drawFilmFrame,
+  filmScenesFor,
+  FILM_HEIGHT,
+  FILM_WIDTH,
+} from './exhibition-film';
 import { FilmError, recordFilm, type FilmOptions } from './record-film';
 import { sampleProfile } from '../core/geometry/profile';
 import {
@@ -1149,23 +1154,26 @@ export function createStudio(host: HTMLDivElement) {
     footCapMaterial.sheen = recipe.sheen;
     footCapMaterial.sheenColor.set(recipe.sheenColor);
     footCapMaterial.color.set(recipe.color);
+    applyLighting(next, exhibition);
+  }
+
+  function applyLighting(next: StudioOptions, backdrop: typeof exhibition) {
     const rig =
       next.glaze >= 1 && next.lightPreset
         ? exhibitionRigFor(next.lightPreset)
         : rigAt(next.glaze);
     ambient.color.set(rig.ambient.sky);
     ambient.groundColor.set(rig.ambient.ground);
-    ambient.intensity =
-      rig.ambient.intensity * (exhibition?.light.ambient ?? 1);
+    ambient.intensity = rig.ambient.intensity * (backdrop?.light.ambient ?? 1);
     key.color.set(rig.key.color);
-    if (exhibition) key.color.lerp(exhibition.keyTint, 0.45);
-    key.intensity = rig.key.intensity * (exhibition?.light.key ?? 1);
+    if (backdrop) key.color.lerp(backdrop.keyTint, 0.45);
+    key.intensity = rig.key.intensity * (backdrop?.light.key ?? 1);
     key.position.set(...rig.key.position);
     rim.color.set(rig.rim.color);
-    rim.intensity = rig.rim.intensity * (exhibition?.light.rim ?? 1);
+    rim.intensity = rig.rim.intensity * (backdrop?.light.rim ?? 1);
     rim.position.set(...rig.rim.position);
     fill.color.set(rig.fill.color);
-    fill.intensity = rig.fill.intensity * (exhibition?.light.fill ?? 1);
+    fill.intensity = rig.fill.intensity * (backdrop?.light.fill ?? 1);
     fill.position.set(...rig.fill.position);
   }
 
@@ -1255,24 +1263,48 @@ export function createStudio(host: HTMLDivElement) {
     }
   }
 
-  async function video(options: FilmOptions) {
+  async function video(filmOptions: FilmOptions) {
     if (filming) throw new FilmError('正在生成视频，请稍候。');
+    const studioOptions = options;
+    if (!studioOptions) throw new FilmError('三维视口尚未就绪。');
     const pixelRatio = renderer.getPixelRatio();
     const previousControls = controls.enabled;
     const previousWireframe = wireframeMesh.visible;
-    const signal = AbortSignal.any([options.signal, lifetime.signal]);
+    const signal = AbortSignal.any([filmOptions.signal, lifetime.signal]);
+    signal.throwIfAborted();
     const filmCamera = new THREE.PerspectiveCamera(
       38,
       FILM_WIDTH / FILM_HEIGHT,
       camera.near,
       camera.far,
     );
-    const title = options.name.trim() || '未命名作品';
+    const title = filmOptions.name.trim() || '未命名作品';
     const frontAzimuth = Math.atan2(
       camera.position.x - controls.target.x,
       camera.position.z - controls.target.z,
     );
+    const scenes = filmScenesFor(activeScene, filmOptions.multipleScenes);
+    const extraScenes = new Map<
+      ExhibitionSceneId,
+      ReturnType<typeof createExhibitionScene>
+    >();
+    const disposeExtraScenes = () => {
+      for (const backdrop of extraScenes.values()) backdrop.dispose();
+      extraScenes.clear();
+    };
+    let visibleBackdrop = exhibition;
+    const showBackdrop = (id: ExhibitionSceneId) => {
+      const backdrop = id === activeScene ? exhibition : extraScenes.get(id);
+      if (visibleBackdrop === backdrop) return;
+      if (visibleBackdrop) visibleBackdrop.group.visible = false;
+      if (backdrop) backdrop.group.visible = true;
+      pedestal.visible = !backdrop;
+      applyLighting(studioOptions, backdrop);
+      visibleBackdrop = backdrop;
+    };
+
     filming = true;
+    signal.addEventListener('abort', disposeExtraScenes, { once: true });
     try {
       hideCursor();
       tapStart = undefined;
@@ -1285,30 +1317,58 @@ export function createStudio(host: HTMLDivElement) {
         repaintQueued = false;
         composite();
       }
-      return await recordFilm({ ...options, signal }, host, (ctx, elapsed) => {
-        drawFilmFrame(
-          ctx,
-          elapsed,
-          title,
-          ([azimuth, elevation, distance, target]) => {
-            if (renderer.getContext().isContextLost()) {
-              throw new FilmError('三维视口已断开，请刷新页面后重试。');
-            }
-            const horizontal = Math.cos(elevation) * distance;
-            filmCamera.position.set(
-              Math.sin(frontAzimuth + azimuth) * horizontal,
-              target + Math.sin(elevation) * distance,
-              Math.cos(frontAzimuth + azimuth) * horizontal,
-            );
-            filmCamera.lookAt(0, target, 0);
-            renderer.render(scene, filmCamera);
-            return renderer.domElement;
-          },
-        );
-      });
+      for (const id of new Set(scenes)) {
+        if (id === activeScene || id === 'neutral') continue;
+        const backdrop = createExhibitionScene(id);
+        backdrop.setFootRadius(studioOptions.profile[0]?.radius ?? 0.2);
+        backdrop.group.visible = false;
+        extraScenes.set(id, backdrop);
+        scene.add(backdrop.group);
+      }
+      // Upload the backdrops before the first recorded frame so the dissolves
+      // don't have to allocate textures while the camera is moving.
+      filmCamera.position.copy(camera.position);
+      filmCamera.lookAt(controls.target);
+      for (const id of extraScenes.keys()) {
+        showBackdrop(id);
+        renderer.render(scene, filmCamera);
+      }
+
+      return await recordFilm(
+        { ...filmOptions, signal },
+        host,
+        (ctx, elapsed) => {
+          drawFilmFrame(
+            ctx,
+            elapsed,
+            title,
+            scenes,
+            ([azimuth, elevation, distance, target], id) => {
+              if (renderer.getContext().isContextLost()) {
+                throw new FilmError('三维视口已断开，请刷新页面后重试。');
+              }
+              showBackdrop(id);
+              const horizontal = Math.cos(elevation) * distance;
+              filmCamera.position.set(
+                Math.sin(frontAzimuth + azimuth) * horizontal,
+                target + Math.sin(elevation) * distance,
+                Math.cos(frontAzimuth + azimuth) * horizontal,
+              );
+              filmCamera.lookAt(0, target, 0);
+              renderer.render(scene, filmCamera);
+              return renderer.domElement;
+            },
+          );
+        },
+      );
     } finally {
+      signal.removeEventListener('abort', disposeExtraScenes);
+      disposeExtraScenes();
       filming = false;
       if (!lifetime.signal.aborted) {
+        if (exhibition) exhibition.group.visible = true;
+        pedestal.visible = !exhibition;
+        applyLighting(studioOptions, exhibition);
         controls.enabled = previousControls;
         wireframeMesh.visible = previousWireframe;
         renderer.setPixelRatio(pixelRatio);
