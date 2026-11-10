@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createExhibitionScene } from './exhibition-scene';
 import { sampleProfile } from '../core/geometry/profile';
 import {
   brushAction,
@@ -40,6 +41,7 @@ import {
   type CameraPresetId,
 } from '../core/export/capture';
 import type {
+  ExhibitionSceneId,
   PaintingAction,
   PaintTool,
   ProfileControlPoint,
@@ -78,6 +80,7 @@ export interface StudioOptions {
   preset: CameraPresetId;
   cameraRevision?: number;
   lightPreset?: LightingPresetId;
+  exhibitionScene?: ExhibitionSceneId;
   glazeFinish?: GlazeFinishId;
   autoRotate?: boolean;
   wireframe?: boolean;
@@ -189,6 +192,19 @@ export function createStudio(host: HTMLDivElement) {
   );
   pedestal.position.y = -0.06;
   scene.add(pedestal);
+  let exhibition: ReturnType<typeof createExhibitionScene> | undefined;
+  let activeScene: ExhibitionSceneId = 'neutral';
+
+  function setExhibitionScene(id: ExhibitionSceneId) {
+    if (id === activeScene) return;
+    exhibition?.dispose();
+    exhibition = id === 'neutral' ? undefined : createExhibitionScene(id);
+    activeScene = id;
+    pedestal.visible = !exhibition;
+    // Keep the camera above the themed scenery's floor at every dolly distance.
+    controls.maxPolarAngle = exhibition ? Math.PI / 2 + 0.13 : Math.PI;
+    if (exhibition) scene.add(exhibition.group);
+  }
 
   // Lightweight SVG cursor overlay for live brush/eraser/stamp preview & ink ripples
   const cursorSvg = document.createElementNS(
@@ -1129,15 +1145,17 @@ export function createStudio(host: HTMLDivElement) {
         : rigAt(next.glaze);
     ambient.color.set(rig.ambient.sky);
     ambient.groundColor.set(rig.ambient.ground);
-    ambient.intensity = rig.ambient.intensity;
+    ambient.intensity =
+      rig.ambient.intensity * (exhibition?.light.ambient ?? 1);
     key.color.set(rig.key.color);
-    key.intensity = rig.key.intensity;
+    if (exhibition) key.color.lerp(exhibition.keyTint, 0.45);
+    key.intensity = rig.key.intensity * (exhibition?.light.key ?? 1);
     key.position.set(...rig.key.position);
     rim.color.set(rig.rim.color);
-    rim.intensity = rig.rim.intensity;
+    rim.intensity = rig.rim.intensity * (exhibition?.light.rim ?? 1);
     rim.position.set(...rig.rim.position);
     fill.color.set(rig.fill.color);
-    fill.intensity = rig.fill.intensity;
+    fill.intensity = rig.fill.intensity * (exhibition?.light.fill ?? 1);
     fill.position.set(...rig.fill.position);
   }
 
@@ -1203,6 +1221,8 @@ export function createStudio(host: HTMLDivElement) {
       footCap.geometry = new THREE.CircleGeometry(footRadius, 48);
       previousProfile = next.profile;
     }
+    setExhibitionScene(next.exhibitionScene ?? 'neutral');
+    exhibition?.setFootRadius(next.profile[0]?.radius ?? 0.2);
     syncActions(next.actions);
     applyGlaze(next);
     scheduleRepaint();
@@ -1227,16 +1247,19 @@ export function createStudio(host: HTMLDivElement) {
   async function snapshot(name: string): Promise<Blob> {
     const size = renderer.getSize(new THREE.Vector2()),
       aspect = camera.aspect;
+    const layout = layoutFor({ name, date: new Date() });
+    // Render themed shots within the photo area above the caption.
+    const photoHeight = exhibition ? layout.footerY : layout.height;
     const output = document.createElement('canvas');
-    output.width = output.height = 1080;
+    output.width = layout.width;
+    output.height = layout.height;
     const out = output.getContext('2d')!;
     try {
-      renderer.setSize(1080, 1080, false);
-      camera.aspect = 1;
+      renderer.setSize(layout.width, photoHeight, false);
+      camera.aspect = layout.width / photoHeight;
       camera.updateProjectionMatrix();
       renderer.render(scene, camera);
-      out.drawImage(renderer.domElement, 0, 0, 1080, 1080);
-      const layout = layoutFor({ name, date: new Date() });
+      out.drawImage(renderer.domElement, 0, 0, layout.width, photoHeight);
       out.fillStyle = layout.background;
       out.fillRect(
         0,
@@ -1336,6 +1359,7 @@ export function createStudio(host: HTMLDivElement) {
       footCap.geometry.dispose();
       footCapMaterial.dispose();
       texture.dispose();
+      exhibition?.dispose();
       pedestal.geometry.dispose();
       pedestal.material.dispose();
       renderer.dispose();

@@ -22,7 +22,12 @@ import {
   kilnTelemetryFor,
   type GlazeFinishId,
 } from './core/materials/glaze';
-import type { PaintingAction, PaintTool, SymmetryCount } from './types/artwork';
+import type {
+  ExhibitionSceneId,
+  PaintingAction,
+  PaintTool,
+  SymmetryCount,
+} from './types/artwork';
 import { stampAction } from './core/painting/actions';
 import {
   canRedo,
@@ -126,6 +131,8 @@ export function App() {
   const [preset, setPreset] = useState<CameraPresetId>('front');
   const [cameraRevision, setCameraRevision] = useState(0);
   const [lightPreset, setLightPreset] = useState<LightingPresetId>('studio');
+  const [exhibitionScene, setExhibitionScene] =
+    useState<ExhibitionSceneId>('neutral');
   const [glazeFinish, setGlazeFinish] = useState<GlazeFinishId>('white');
   const [autoRotate, setAutoRotate] = useState(false);
   const [wireframe, setWireframe] = useState(false);
@@ -270,6 +277,7 @@ export function App() {
     setPreset('front');
     setCameraRevision((rev) => rev + 1);
     setLightPreset('studio');
+    setExhibitionScene('neutral');
     setGlazeFinish('white');
     setAutoRotate(false);
     currentId.current = crypto.randomUUID();
@@ -311,6 +319,7 @@ export function App() {
         score: challenge ? score : undefined,
         glazeFinish,
         lightPreset,
+        exhibitionScene,
       });
       await refreshGallery();
       setNotice('作品已保存到此浏览器，刷新后仍可打开。');
@@ -377,6 +386,7 @@ export function App() {
     setFiringProgress(1);
     setGlazeFinish(artwork.glazeFinish ?? 'white');
     setLightPreset(artwork.lightPreset ?? 'studio');
+    setExhibitionScene(artwork.exhibitionScene ?? 'neutral');
     setMelodyTitle(resetPorcelainMelody());
     setNotice('已恢复器型与完整彩绘。');
   }
@@ -700,6 +710,8 @@ export function App() {
                 }}
                 lightPreset={lightPreset}
                 onLightPresetChange={setLightPreset}
+                exhibitionScene={exhibitionScene}
+                onExhibitionSceneChange={setExhibitionScene}
                 glazeFinish={glazeFinish}
                 onGlazeFinishChange={setGlazeFinish}
                 disabled={busy}
@@ -751,6 +763,9 @@ export function App() {
             preset={preset}
             cameraRevision={cameraRevision}
             lightPreset={lightPreset}
+            exhibitionScene={
+              stage === 'exhibition' ? exhibitionScene : 'neutral'
+            }
             glazeFinish={glazeFinish}
             autoRotate={autoRotate && stage !== 'firing'}
             wireframe={wireframe}

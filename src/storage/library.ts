@@ -20,6 +20,7 @@
  */
 import { del, entries, get, set } from 'idb-keyval';
 import type { UseStore } from 'idb-keyval';
+import { EXHIBITION_SCENE_IDS } from '../types/artwork';
 import { brushAction } from '../core/painting/actions';
 import type {
   GlazeFinishId,
@@ -401,6 +402,9 @@ export function validateArtwork(raw: unknown): StudioArtworkV2 {
     if (!lightPreset) throw corrupt('灯光选项无效');
     artwork.lightPreset = lightPreset;
   }
+  // An unknown presentation setting can fall back without hiding the artwork.
+  const scene = EXHIBITION_SCENE_IDS.find((id) => id === raw.exhibitionScene);
+  if (scene !== undefined) artwork.exhibitionScene = scene;
   return artwork;
 }
 

@@ -4,12 +4,15 @@ import {
   type GlazeFinishId,
 } from '../core/materials/glaze';
 import type { LightingPresetId } from '../core/materials/lighting';
+import { EXHIBITION_SCENE_IDS, type ExhibitionSceneId } from '../types/artwork';
 
 export interface CameraPanelProps {
   preset: CameraPresetId;
   onPresetChange: (preset: CameraPresetId) => void;
   lightPreset?: LightingPresetId;
   onLightPresetChange?: (preset: LightingPresetId) => void;
+  exhibitionScene: ExhibitionSceneId;
+  onExhibitionSceneChange: (scene: ExhibitionSceneId) => void;
   glazeFinish?: GlazeFinishId;
   onGlazeFinishChange?: (finish: GlazeFinishId) => void;
   disabled?: boolean;
@@ -28,20 +31,54 @@ const LIGHT_OPTIONS: { id: LightingPresetId; label: string }[] = [
   { id: 'celadon', label: '天青雅光' },
 ];
 
-/**
- * The recommended camera positions and studio lighting presets of the photo stage.
- */
+const SCENE_OPTIONS: Record<
+  ExhibitionSceneId,
+  { label: string; detail: string }
+> = {
+  neutral: { label: '素色展台', detail: '浅灰背景，便于对照器型与釉色。' },
+  ink: { label: '云山留白', detail: '纸色远山与浅石展台，衬出青花纹样。' },
+  lattice: { label: '木格暖阁', detail: '胡桃木格与琥珀光，适合暖釉与描金。' },
+  moon: { label: '月门夜庭', detail: '冷月与深色展台，勾勒器口和肩线。' },
+};
+
+/** Scene, camera, lighting and glaze controls for the photo stage. */
 export function CameraPanel({
   preset,
   onPresetChange,
   lightPreset = 'studio',
   onLightPresetChange,
+  exhibitionScene,
+  onExhibitionSceneChange,
   glazeFinish = 'white',
   onGlazeFinishChange,
   disabled = false,
 }: CameraPanelProps): JSX.Element {
   return (
     <div className="camera-controls">
+      <div className="lighting-controls">
+        <span className="control-caption">展陈场景</span>
+        <div
+          className="segmented"
+          role="group"
+          aria-label="展陈场景"
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)' }}
+        >
+          {EXHIBITION_SCENE_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={exhibitionScene === id}
+              disabled={disabled}
+              onClick={() => onExhibitionSceneChange(id)}
+            >
+              {SCENE_OPTIONS[id].label}
+            </button>
+          ))}
+        </div>
+        <small aria-live="polite">
+          {SCENE_OPTIONS[exhibitionScene].detail}
+        </small>
+      </div>
       <div
         className="segmented"
         role="group"

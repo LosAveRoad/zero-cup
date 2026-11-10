@@ -69,6 +69,14 @@ export type GlazeFinishId = 'white' | 'celadon' | 'crackle' | 'gilded';
 /** Exhibition lighting presets offered in the exhibition stage. */
 export type LightingPresetId = 'studio' | 'warm' | 'celadon';
 
+export const EXHIBITION_SCENE_IDS = [
+  'neutral',
+  'ink',
+  'lattice',
+  'moon',
+] as const;
+export type ExhibitionSceneId = (typeof EXHIBITION_SCENE_IDS)[number];
+
 /** Schema v2 record. The only shape the app writes. */
 export interface StudioArtworkV2 {
   version: 2;
@@ -86,6 +94,8 @@ export interface StudioArtworkV2 {
   glazeFinish?: GlazeFinishId;
   /** Exhibition light rig; absent on records saved before it existed (studio). */
   lightPreset?: LightingPresetId;
+  /** Display setting for the live exhibit and photo. Older works use neutral. */
+  exhibitionScene?: ExhibitionSceneId;
 }
 
 export const STUDIO_SCHEMA_VERSION = 2;

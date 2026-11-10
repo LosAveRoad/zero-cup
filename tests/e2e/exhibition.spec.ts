@@ -640,6 +640,63 @@ test.describe('成品机位', () => {
   });
 });
 
+test('三套展陈改变成品照片，收藏后重新打开可恢复', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = watchPageErrors(page);
+  page.on('console', (message) => {
+    if (
+      message.type() === 'error' &&
+      message.text().includes('THREE.WebGLProgram')
+    ) {
+      errors.push(message.text());
+    }
+  });
+  await page.goto('/?prologue=skip');
+  await fireToExhibition(page);
+
+  const scenes = page.getByRole('group', { name: '展陈场景' });
+  const studio = scenes.getByRole('button', { name: '素色展台' });
+  await expect(studio).toHaveAttribute('aria-pressed', 'true');
+
+  const original = await downloadPng(page);
+  const previousPhotos = [original];
+  for (const name of ['云山留白', '木格暖阁', '月门夜庭']) {
+    const scene = scenes.getByRole('button', { name });
+    await scene.click();
+    await expect(scene).toHaveAttribute('aria-pressed', 'true');
+    const photo = await downloadPng(page);
+    expect(photo.readUInt32BE(16)).toBe(1080);
+    expect(photo.readUInt32BE(20)).toBe(1080);
+    for (const previous of previousPhotos) {
+      const diff = await compareExports(page, previous, photo);
+      expect(diff.photoDiff).toBeGreaterThan(100_000);
+      expect(diff.bandDiff).toBe(0);
+    }
+    previousPhotos.push(photo);
+  }
+
+  await page.getByRole('button', { name: '保存到藏品' }).click();
+  await expect(page.getByRole('status')).toContainText('作品已保存');
+  await page.reload();
+  page.on('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: '打开作品' }).click();
+  await expect(
+    scenes.getByRole('button', { name: '月门夜庭' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  expect(
+    (await compareExports(page, previousPhotos[3], await downloadPng(page)))
+      .photoDiff,
+  ).toBe(0);
+
+  await studio.click();
+  expect(
+    (await compareExports(page, original, await downloadPng(page))).photoDiff,
+  ).toBe(0);
+  await page.getByRole('button', { name: '继续彩绘' }).click();
+  await expect(scenes).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test.describe('创作闭环', () => {
   test('导出后可以继续彩绘，并再次烧制到成品', async ({ page }) => {
     const errors = watchPageErrors(page);
