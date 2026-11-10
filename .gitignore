@@ -8,3 +8,6 @@ test-results/
 !.env.example
 .DS_Store
 .workbuddy/
+
+# Local film soundtrack supplied for the demo
+/src/components/film-bgm.mp3
