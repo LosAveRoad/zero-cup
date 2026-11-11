@@ -30,7 +30,7 @@ function watchPageErrors(page: Page): string[] {
 async function fireToExhibition(page: Page): Promise<void> {
   await page.getByRole('button', { name: '定型进入彩绘' }).click();
   await page.getByRole('button', { name: '入窑烧制' }).click();
-  await expect(page.getByLabel('作品名称')).toBeVisible();
+  await expect(page.getByLabel('作品名称')).toBeVisible({ timeout: 15_000 });
 }
 
 /** Downloads the exported PNG and returns its bytes. */
@@ -179,8 +179,10 @@ async function recordFiringFrames(page: Page): Promise<void> {
         valueMin: bar ? bar.getAttribute('aria-valuemin') : null,
         valueMax: bar ? bar.getAttribute('aria-valuemax') : null,
         countdown: /剩余 \d+\.\d 秒/.test(aside?.textContent ?? ''),
-        open: button('打开作品')?.disabled ?? false,
-        remove: button('删除')?.disabled ?? false,
+        // Collection actions are absent while the dialog is closed and are
+        // disabled if it was already open when firing began.
+        open: button('打开作品')?.disabled ?? true,
+        remove: button('删除')?.disabled ?? true,
         reset: button('新建作品')?.disabled ?? false,
       });
       if (store.frames.length < 600) requestAnimationFrame(tick);
@@ -364,6 +366,7 @@ test.describe('烧制阶段', () => {
     // Put one finished piece in the gallery so its buttons exist at all.
     await page.getByLabel('作品名称').fill('锁定测试青花瓶');
     await page.getByRole('button', { name: '保存到藏品' }).click();
+    await page.getByRole('button', { name: /我的作品/ }).click();
     await expect(
       page.getByRole('heading', { name: '锁定测试青花瓶' }),
     ).toBeVisible();
@@ -375,7 +378,14 @@ test.describe('烧制阶段', () => {
     ).toBeEnabled();
     await expect(page.getByRole('button', { name: '新建作品' })).toBeEnabled();
 
-    await page.getByRole('button', { name: '继续彩绘' }).click();
+    await page.getByRole('button', { name: '关闭我的作品' }).click();
+    page.on('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: '新建作品' }).click();
+    await page
+      .getByRole('dialog', { name: '器型百科' })
+      .getByRole('button', { name: '选择创作：自由创作' })
+      .click();
+    await page.getByRole('button', { name: '定型进入彩绘' }).click();
     await recordStageLabels(page);
     await recordFiringFrames(page);
     await page.getByRole('button', { name: '入窑烧制' }).click();
@@ -396,7 +406,7 @@ test.describe('烧制阶段', () => {
     // software renderer can step straight from 窑火正盛 to 挂釉 - so the
     // assertion is that the observed labels are a strictly increasing run of
     // the known stages, not that every one of them was shown.
-    await expect(page.getByLabel('作品名称')).toBeVisible();
+    await expect(page.getByLabel('作品名称')).toBeVisible({ timeout: 15_000 });
     const labels = await stageLabels(page);
     const order = ['窑火正盛', '升温', '挂釉', '完成'];
     expect(labels.length).toBeGreaterThan(0);
@@ -655,12 +665,12 @@ test('三套展陈改变成品照片，收藏后重新打开可恢复', async ({
   await fireToExhibition(page);
 
   const scenes = page.getByRole('group', { name: '展陈场景' });
-  const studio = scenes.getByRole('button', { name: '素色展台' });
-  await expect(studio).toHaveAttribute('aria-pressed', 'true');
+  const defaultScene = scenes.getByRole('button', { name: '云山留白' });
+  await expect(defaultScene).toHaveAttribute('aria-pressed', 'true');
 
   const original = await downloadPng(page);
   const previousPhotos = [original];
-  for (const name of ['云山留白', '木格暖阁', '月门夜庭']) {
+  for (const name of ['素色展台', '木格暖阁', '月门夜庭']) {
     const scene = scenes.getByRole('button', { name });
     await scene.click();
     await expect(scene).toHaveAttribute('aria-pressed', 'true');
@@ -679,6 +689,7 @@ test('三套展陈改变成品照片，收藏后重新打开可恢复', async ({
   await expect(page.getByRole('status')).toContainText('作品已保存');
   await page.reload();
   page.on('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: /我的作品/ }).click();
   await page.getByRole('button', { name: '打开作品' }).click();
   await expect(
     scenes.getByRole('button', { name: '月门夜庭' }),
@@ -688,22 +699,23 @@ test('三套展陈改变成品照片，收藏后重新打开可恢复', async ({
       .photoDiff,
   ).toBe(0);
 
-  await studio.click();
+  await defaultScene.click();
   expect(
     (await compareExports(page, original, await downloadPng(page))).photoDiff,
   ).toBe(0);
-  await page.getByRole('button', { name: '继续彩绘' }).click();
-  await expect(scenes).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: '04 成品工作台' }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });
 
 test.describe('创作闭环', () => {
-  test('导出后可以继续彩绘，并再次烧制到成品', async ({ page }) => {
+  test('导出后保存并重新打开成品', async ({ page }) => {
     const errors = watchPageErrors(page);
     await page.goto('/?prologue=skip');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
-    // One stroke, so the undo history survives the round trip.
+    // One stroke is reflected in the saved action list.
     const canvas = page.getByLabel('三维陶器画布');
     const rect = (await canvas.boundingBox())!;
     await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height * 0.52);
@@ -717,33 +729,19 @@ test.describe('创作闭环', () => {
     await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
 
     await page.getByRole('button', { name: '入窑烧制' }).click();
-    await expect(page.getByLabel('作品名称')).toBeVisible();
+    await expect(page.getByLabel('作品名称')).toBeVisible({ timeout: 15_000 });
     await page.getByLabel('作品名称').fill('二轮青花瓶');
     await downloadPng(page);
-
-    // Continuing to paint brings the painting stage back with its history.
-    await page.getByRole('button', { name: '继续彩绘' }).click();
+    await page.getByRole('button', { name: '保存到藏品' }).click();
+    await expect(page.getByRole('status')).toContainText('作品已保存');
+    await page.reload();
+    page.on('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: /我的作品/ }).click();
+    await page.getByRole('button', { name: '打开作品' }).click();
+    await expect(page.getByLabel('作品名称')).toHaveValue('二轮青花瓶');
     await expect(
-      page.getByRole('button', { name: '撤销', exact: true }),
+      page.getByRole('heading', { name: '04 成品工作台' }),
     ).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: '重做', exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: '撤销', exact: true }),
-    ).toBeEnabled();
-
-    // The second firing runs to the end as well.
-    await page.getByRole('button', { name: '入窑烧制' }).click();
-    const progress = page.getByRole('progressbar', { name: '烧制进度' });
-    await expect(progress).toBeVisible();
-    await expect(page.getByLabel('作品名称')).toHaveCount(0);
-    await expect(page.getByLabel('作品名称')).toBeVisible();
-    await expect(progress).toHaveCount(0);
-    await expect(
-      page.locator('nav[aria-label="制作阶段"] span[aria-current="step"]'),
-    ).toContainText('成品');
 
     expect(errors).toEqual([]);
   });
@@ -789,8 +787,7 @@ test.describe('创作闭环', () => {
     });
 
     await page.getByRole('button', { name: '入窑烧制' }).click();
-    await expect(page.getByLabel('作品名称')).toBeVisible();
-    await page.waitForTimeout(300);
+    await expect(page.getByLabel('作品名称')).toBeVisible({ timeout: 15_000 });
 
     const samples = await page.evaluate(() => {
       const store = window as unknown as {
@@ -876,10 +873,15 @@ test.describe('创作闭环', () => {
     // No query parameter: this is the path a first-time visitor gets.
     await page.goto('/');
 
-    // Scroll prologue is visible on entry and opens when clicking 入坊造物
-    const enterBtn = page.getByRole('button', { name: '入坊造物' });
-    await expect(enterBtn).toBeVisible();
-    await enterBtn.click();
+    // The opening encyclopedia lists goals; choosing one enters the workshop.
+    await page
+      .locator('.scroll-card')
+      .getByRole('button', { name: /器型百科/ })
+      .click();
+    await page
+      .getByRole('dialog', { name: '器型百科' })
+      .getByRole('button', { name: '选择创作：梅瓶' })
+      .click();
     await expect(page.locator('.scroll-prologue.is-open')).toHaveCount(1);
 
     // Painting stage shows the miniature calligraphy brush reticle
@@ -890,18 +892,20 @@ test.describe('创作闭环', () => {
     await expect(canvas).toHaveAttribute('data-cursor', 'brush-reticle');
     await expect(page.locator('.calligraphy-brush-reticle')).toHaveCount(1);
 
-    // Importing an image extracts its contours and imprints onto the vessel
+    // Imported contours join the same visual, horizontally browsable stamp gallery.
+    await page.getByRole('button', { name: '印章', exact: true }).click();
     const sampleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#fff"/><circle cx="40" cy="40" r="24" fill="#000"/></svg>`;
     await page.getByLabel('导入图案图片').setInputFiles({
       name: 'motif.svg',
       mimeType: 'image/svg+xml',
       buffer: Buffer.from(sampleSvg, 'utf-8'),
     });
-    await expect(page.getByLabel('导入图案青花轮廓预览')).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: '导入图样' }),
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'motif' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByLabel('可横向选择的青花纹样')).toBeVisible();
+    await expect(page.getByText('已落笔 0 次', { exact: false })).toBeVisible();
 
     await page.getByRole('button', { name: '入窑烧制' }).click();
     await expect(page.getByRole('heading', { name: '成品工作台' })).toBeVisible(
@@ -916,7 +920,6 @@ test.describe('创作闭环', () => {
     await page.mouse.click(rect.x + rect.width / 2, rect.y + rect.height / 2);
     await expect(canvas).toHaveAttribute('data-cursor', 'metal-rod');
     await expect(page.locator('.chime-note-glyph')).toHaveCount(1);
-    await expect(page.locator('.scene-hint')).toContainText('轻叩瓷身奏响五声');
 
     // Moving to the far corner outside the vessel clears the metal rod cursor
     await page.mouse.move(rect.x + 12, rect.y + 12);

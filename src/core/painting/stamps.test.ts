@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStampGeometry,
   getStampAsset,
+  getStampSvgPaths,
   STAMP_ASSETS,
   STAMP_ROTATION_RANGE,
   STAMP_SCALE_RANGE,
@@ -12,28 +13,97 @@ import {
 const IDS: StampAssetId[] = ['lotus', 'seaside', 'cloud'];
 
 describe('stamp asset catalogue', () => {
-  it('lists exactly three motifs in display order', () => {
-    expect(STAMP_ASSETS).toHaveLength(3);
+  it('lists the six painted motifs followed by the three vector motifs', () => {
     expect(STAMP_ASSETS.map((asset) => asset.id)).toEqual([
-      'lotus',
-      'seaside',
-      'cloud',
+      'lotus-scroll-wash',
+      'sea-cliffs-wash',
+      'ruyi-cloud-wash',
+      'fish-and-grasses-wash',
+      'pomegranate-wash',
+      'plum-branch-wash',
+      'rotary-leaf',
+      'filled-lotus',
+      'blue-key-fret',
     ]);
     expect(STAMP_ASSETS.map((asset) => asset.name)).toEqual([
       '缠枝莲',
       '海水江崖',
       '云纹',
+      '游鱼水藻',
+      '折枝石榴',
+      '折枝梅',
+      '青叶填色',
+      '团莲填色',
+      '蓝地回纹',
     ]);
     for (const asset of STAMP_ASSETS) {
       expect(asset.size).toBeGreaterThan(0);
       expect(asset.description.length).toBeGreaterThan(0);
+      expect(getStampAsset(asset.id)).toBe(asset);
+    }
+    expect(STAMP_ASSETS.slice(0, 6).every((asset) => asset.maskUrl)).toBe(true);
+    expect(STAMP_ASSETS.slice(6).every((asset) => asset.svgPaths?.length)).toBe(
+      true,
+    );
+  });
+
+  it('provides a filled, axially symmetric leaf with porcelain cutouts', () => {
+    const leaf = getStampAsset('rotary-leaf');
+    expect(leaf).toMatchObject({
+      id: 'rotary-leaf',
+      name: '青叶填色',
+      size: 250,
+    });
+    expect(leaf?.svgPaths).toHaveLength(1);
+    expect(leaf?.svgPaths?.[0].fill).toBeGreaterThan(0.9);
+    expect(leaf?.svgPaths?.[0].d.match(/M/g)).toHaveLength(6);
+    expect(getStampSvgPaths('rotary-leaf')).toBe(leaf?.svgPaths);
+    for (const id of ['filled-lotus', 'blue-key-fret']) {
+      const motif = getStampAsset(id);
+      expect(motif?.svgPaths?.some((path) => path.fill !== undefined)).toBe(
+        true,
+      );
     }
   });
 
+  it('can still replay all seven previous vector motifs by their saved IDs', () => {
+    for (const id of [
+      'lotus-scroll',
+      'sea-cliffs',
+      'ruyi-cloud',
+      'fish-and-grasses',
+      'pomegranate',
+      'plum-branch',
+      'key-fret',
+    ] as const) {
+      expect(getStampAsset(id)?.maskUrl).toBeUndefined();
+      expect(getStampSvgPaths(id)).toBe(getStampAsset(id)?.svgPaths);
+      expect(getStampSvgPaths(id).some((path) => path.fill !== undefined)).toBe(
+        true,
+      );
+    }
+  });
+
+  it('connects the filled key fret across motif and rotary repeat edges', () => {
+    const fret = getStampAsset('blue-key-fret');
+    expect(fret?.svgPaths?.[0]).toMatchObject({
+      d: 'M0 27 H100 V33 H0 Z M0 67 H100 V73 H0 Z',
+    });
+    expect(fret?.svgPaths?.[1]).toMatchObject({
+      d: 'M0 39 H33 V61 H25 V45 H12 V53 H22 V56 H5 V42 H0 Z M33 39 H66 V61 H58 V45 H45 V53 H55 V56 H38 V42 H33 Z M66 39 H100 V61 H92 V45 H79 V53 H89 V56 H72 V42 H66 Z',
+    });
+  });
+
+  it('keeps the remaining vector cursor previews near the regular stamp scale', () => {
+    expect(STAMP_ASSETS.slice(-3).map(({ size }) => size)).toEqual([
+      250, 245, 250,
+    ]);
+  });
+
   it('resolves known ids and ignores unknown ones', () => {
-    expect(getStampAsset('lotus')).toBe(STAMP_ASSETS[0]);
-    expect(getStampAsset('seaside')).toBe(STAMP_ASSETS[1]);
-    expect(getStampAsset('cloud')).toBe(STAMP_ASSETS[2]);
+    expect(getStampAsset('lotus')?.size).toBe(220);
+    expect(getStampAsset('seaside')?.size).toBe(240);
+    expect(getStampAsset('cloud')?.size).toBe(200);
     expect(getStampAsset('nope')).toBeUndefined();
     expect(getStampAsset('')).toBeUndefined();
     const customId = 'custom:0,40:-300,-200;300,200' as const;
@@ -42,6 +112,27 @@ describe('stamp asset catalogue', () => {
     expect(
       buildStampGeometry('custom:invalid' as StampAssetId).paths,
     ).toHaveLength(0);
+  });
+
+  it('projects imported and legacy outlines into the shared SVG coordinate space', () => {
+    const customId = 'custom:0,40:-300,-200;300,200' as const;
+    expect(getStampSvgPaths(customId)).toEqual([
+      { d: 'M35 60 L65 40', width: 2 },
+    ]);
+    expect(
+      getStampSvgPaths(customId, [
+        {
+          points: [
+            [-1, -1],
+            [0, 1],
+            [1, -1],
+          ],
+          closed: true,
+          width: 0.04,
+        },
+      ]),
+    ).toEqual([{ d: 'M0 100 L50 0 L100 100 Z', width: 2 }]);
+    expect(getStampSvgPaths('lotus')).toHaveLength(12);
   });
 });
 

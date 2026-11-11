@@ -1,14 +1,13 @@
 /**
- * Deterministic vector geometry for the three porcelain stamp motifs.
+ * Lookup and placement for the porcelain stamp library.
  *
- * The stamps are drawn procedurally: every asset is a list of stroked
- * polylines in a local space normalised to [-1, 1]. There is no background
- * rectangle and no raster image, so a stamp can never contribute a black
- * frame and no third-party licence is involved.
+ * Presets use pigment masks or SVG paths in a 100 × 100 viewBox. The earliest
+ * presets and imported contours use polylines in [-1, 1]. Keep each edition
+ * under its own ID because saved artwork replays its stamp commands.
  *
  * Coordinate contract
  * ------------------
- * - Local space: x and y both live in [-1, 1]; the motif is centred on the
+ * - Polyline space: x and y both live in [-1, 1]; the motif is centred on the
  *   origin and always fits inside that box.
  * - Texture space: the painting texture is 2048x2048 and the UV origin is
  *   bottom-left, so `x = u * 2048` and `y = (1 - v) * 2048`.
@@ -22,20 +21,59 @@
  */
 
 import { CUSTOM_STAMP_SIZE, decodeCustomStampId } from './contour';
+import { MUSEUM_MOTIFS } from './museum-motifs';
+import {
+  PREVIOUS_GALLERY_STAMPS,
+  RETIRED_STAMP,
+  TEMPLATE_STAMPS,
+  VECTOR_GALLERY_STAMPS,
+  type StampSvgPath,
+} from './stamp-presets';
+
+const IMAGE_STAMP_ASSETS = PREVIOUS_GALLERY_STAMPS.map(
+  ({ id, name, description, size }) => ({
+    id: `${id}-wash` as const,
+    name,
+    description,
+    size,
+    maskUrl: `${import.meta.env.BASE_URL}images/stamps/${id}.webp`,
+  }),
+);
+
+export const STAMP_ASSETS: readonly StampAsset[] = [
+  ...IMAGE_STAMP_ASSETS,
+  ...VECTOR_GALLERY_STAMPS,
+];
+
+const SVG_STAMP_ASSETS = [
+  ...PREVIOUS_GALLERY_STAMPS,
+  RETIRED_STAMP,
+  ...VECTOR_GALLERY_STAMPS,
+  ...TEMPLATE_STAMPS,
+  ...MUSEUM_MOTIFS,
+];
+const PRESET_STAMP_ASSETS = [...IMAGE_STAMP_ASSETS, ...SVG_STAMP_ASSETS];
+
+type LegacyStampId = 'lotus' | 'seaside' | 'cloud';
 
 /** Identifiers of the built-in stamp motifs plus custom imported contour stamps. */
-export type StampAssetId = 'lotus' | 'seaside' | 'cloud' | `custom:${string}`;
+export type StampAssetId =
+  | (typeof PRESET_STAMP_ASSETS)[number]['id']
+  | LegacyStampId
+  | `custom:${string}`;
 
-/** A selectable stamp motif as shown in the tool panel. */
+/** A stamp used in the gallery or to replay saved work. */
 export interface StampAsset {
   id: StampAssetId;
   name: string;
   description: string;
   size: number;
+  maskUrl?: string;
+  svgPaths?: readonly StampSvgPath[];
 }
 
-/** The three built-in motifs, in display order: 缠枝莲 / 海水江崖 / 云纹. */
-export const STAMP_ASSETS: readonly StampAsset[] = [
+/** Saved commands and existing quick-paint templates can still use these IDs. */
+const LEGACY_STAMP_ASSETS: readonly StampAsset[] = [
   {
     id: 'lotus',
     name: '缠枝莲',
@@ -88,7 +126,9 @@ const TAU = Math.PI * 2;
 
 /** Look a motif up by id; unknown ids resolve to `undefined`. */
 export function getStampAsset(id: string): StampAsset | undefined {
-  const builtin = STAMP_ASSETS.find((asset) => asset.id === id);
+  const builtin =
+    PRESET_STAMP_ASSETS.find((asset) => asset.id === id) ??
+    LEGACY_STAMP_ASSETS.find((asset) => asset.id === id);
   if (builtin) return builtin;
   if (decodeCustomStampId(id)) {
     return {
@@ -101,12 +141,32 @@ export function getStampAsset(id: string): StampAsset | undefined {
   return undefined;
 }
 
-/** Build the deterministic geometry of one motif. */
+/** Build the polyline geometry used by legacy and imported stamps. */
 export function buildStampGeometry(id: StampAssetId): StampGeometry {
   if (id === 'lotus') return { paths: lotusPaths() };
   if (id === 'seaside') return { paths: seasidePaths() };
   if (id === 'cloud') return { paths: cloudPaths() };
   return decodeCustomStampId(id) ?? { paths: [] };
+}
+
+/** Project a motif into the 100 × 100 SVG viewBox used by both previews. */
+export function getStampSvgPaths(
+  id: StampAssetId,
+  customPaths?: readonly StampPath[],
+): readonly StampSvgPath[] {
+  const preset = SVG_STAMP_ASSETS.find((asset) => asset.id === id);
+  if (preset) return preset.svgPaths;
+  const paths = customPaths ?? buildStampGeometry(id).paths;
+  return paths.map(({ points, closed, width }) => {
+    const d = points
+      .map(([x, y], index) => {
+        const sx = Number((50 + x * 50).toFixed(2));
+        const sy = Number((50 - y * 50).toFixed(2));
+        return `${index === 0 ? 'M' : 'L'}${sx} ${sy}`;
+      })
+      .join(' ');
+    return { d: closed ? `${d} Z` : d, width: width * 50 };
+  });
 }
 
 /**

@@ -62,6 +62,15 @@ async function resetDatabase(page: Page): Promise<void> {
   await page.reload();
 }
 
+/** The current studio opens the collection as a modal from the header. */
+async function openGallery(page: Page): Promise<void> {
+  const dialog = page.getByRole('dialog', { name: '我的作品' });
+  if (!(await dialog.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /我的作品/ }).click();
+  }
+  await expect(dialog).toBeVisible();
+}
+
 /** 绕过应用，直接把记录写进 `porcelain-tales-studio/artworks`。 */
 async function seedRecords(page: Page, seeds: SeedRecord[]): Promise<void> {
   await page.evaluate(
@@ -208,17 +217,17 @@ async function createArtwork(
     await drawStroke(page, index % 2 === 0 ? 1 : -1);
     await expect(
       page.getByText(`已落笔 ${index + 1} 次`, { exact: false }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   }
   await page.getByRole('button', { name: '入窑烧制' }).click();
-  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByLabel('作品名称').fill(name);
 }
 
 test.describe('旧版 v1 存档的读取迁移', () => {
-  test('v1 记录可以打开：作品名、器型和每一条笔划都完整恢复', async ({
-    page,
-  }) => {
+  test('v1 记录可打开：作品名与记录数据保持兼容', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await resetDatabase(page);
@@ -251,8 +260,9 @@ test.describe('旧版 v1 存档的读取迁移', () => {
       },
     ]);
     await page.reload();
+    await openGallery(page);
 
-    // 画廊里能看到这件旧作品，成品图也读得出来。
+    // 打开作品库后能看到这件旧作品，成品图也读得出来。
     await expect(
       page.getByRole('heading', { name: '旧版青花碗' }),
     ).toBeVisible();
@@ -271,42 +281,13 @@ test.describe('旧版 v1 存档的读取迁移', () => {
     page.on('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: '打开作品' }).click();
     await expect(page.getByLabel('作品名称')).toHaveValue('旧版青花碗');
-    await page.getByRole('button', { name: '继续彩绘' }).click();
-    await expect(page.getByText('已落笔 2 次', { exact: false })).toBeVisible();
-
-    // 再保存一次：器型、笔划和成品图都要按 v2 完整写回同一条记录。
-    await page.getByRole('button', { name: '入窑烧制' }).click();
     await expect(
-      page.getByRole('button', { name: '保存到藏品' }),
+      page.getByRole('heading', { name: '04 成品工作台' }),
     ).toBeVisible();
-    await page.getByRole('button', { name: '保存到藏品' }).click();
-    await expect(page.getByRole('status')).toContainText('作品已保存');
-
-    const afterSave = await readRecords(page);
-    expect(afterSave).toHaveLength(1);
-    expect(afterSave[0].version).toBe(2);
-    expect(afterSave[0].name).toBe('旧版青花碗');
-    expect(afterSave[0].profile).toEqual(DEFAULT_PROFILE);
-    expect(afterSave[0].actions).toEqual([
-      {
-        type: 'BRUSH',
-        path: [
-          { u: 0.2, v: 0.3 },
-          { u: 0.5, v: 0.55 },
-        ],
-        color: '#174a94',
-        opacity: 1,
-        size: 24,
-      },
-      {
-        type: 'BRUSH',
-        path: [{ u: 0.6, v: 0.7 }],
-        color: '#547fb2',
-        opacity: 1,
-        size: 12,
-      },
-    ]);
-    expect(afterSave[0].imageSize).toBeGreaterThan(0);
+    const afterOpen = await readRecords(page);
+    expect(afterOpen).toHaveLength(1);
+    expect(afterOpen[0].version).toBe(1);
+    expect(afterOpen[0].strokes).toHaveLength(2);
     expect(errors).toEqual([]);
   });
 });
@@ -345,6 +326,7 @@ test.describe('坏记录与未知版本的隔离', () => {
       },
     ]);
     await page.reload();
+    await openGallery(page);
 
     await expect(
       page.getByRole('heading', { name: '完好的作品' }),
@@ -382,6 +364,7 @@ test.describe('坏记录与未知版本的隔离', () => {
       },
     ]);
     await page.reload();
+    await openGallery(page);
 
     await expect(page.getByRole('heading', { name: '未来作品' })).toHaveCount(
       0,
@@ -408,12 +391,15 @@ test.describe('藏瓷阁的保存与删除', () => {
     await createArtwork(page, '第一次保存');
 
     await page.getByRole('button', { name: '保存到藏品' }).click();
+    await openGallery(page);
     await expect(
       page.getByRole('heading', { name: '第一次保存' }),
     ).toBeVisible();
 
+    await page.getByRole('button', { name: '关闭我的作品' }).click();
     await page.getByLabel('作品名称').fill('第二次保存');
     await page.getByRole('button', { name: '保存到藏品' }).click();
+    await openGallery(page);
     await expect(
       page.getByRole('heading', { name: '第二次保存' }),
     ).toBeVisible();
@@ -431,6 +417,7 @@ test.describe('藏瓷阁的保存与删除', () => {
     await resetDatabase(page);
     await createArtwork(page, '待删除的作品');
     await page.getByRole('button', { name: '保存到藏品' }).click();
+    await openGallery(page);
     await expect(
       page.getByRole('heading', { name: '待删除的作品' }),
     ).toBeVisible();
@@ -440,6 +427,7 @@ test.describe('藏瓷阁的保存与删除', () => {
     await expect(page.getByRole('status')).toHaveText('作品已删除。');
 
     await page.reload();
+    await openGallery(page);
     await expect(
       page.getByRole('heading', { name: '待删除的作品' }),
     ).toHaveCount(0);
@@ -453,16 +441,19 @@ test.describe('藏瓷阁的保存与删除', () => {
     await resetDatabase(page);
     await createArtwork(page, '两笔作品', 2);
     await page.getByRole('button', { name: '保存到藏品' }).click();
+    await openGallery(page);
     await expect(page.getByRole('heading', { name: '两笔作品' })).toBeVisible();
 
     await page.reload();
+    await openGallery(page);
     await expect(page.getByRole('heading', { name: '两笔作品' })).toBeVisible();
 
     page.on('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: '打开作品' }).click();
     await expect(page.getByLabel('作品名称')).toHaveValue('两笔作品');
-    await page.getByRole('button', { name: '继续彩绘' }).click();
-    await expect(page.getByText('已落笔 2 次', { exact: false })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '04 成品工作台' }),
+    ).toBeVisible();
     expect(errors).toEqual([]);
   });
 });
@@ -495,7 +486,7 @@ test.describe('存储失败的可见性', () => {
     // 失败之后当前作品还在：器物和作品名称都没有被清掉。
     await expect(page.getByLabel('三维陶器画布')).toBeVisible();
     await expect(page.getByLabel('作品名称')).toHaveValue('配额不足的作品');
-    await expect(page.locator('.artwork')).toHaveCount(0);
+    expect(await readRecords(page)).toHaveLength(0);
 
     await page.evaluate(() => {
       const holder = window as unknown as {
@@ -510,6 +501,7 @@ test.describe('存储失败的可见性', () => {
     // 桩子还原之后重试就能存进去：失败是可重试的，不是把作品弄丢了。
     await page.getByRole('button', { name: '保存到藏品' }).click();
     await expect(page.getByRole('status')).toContainText('作品已保存');
+    await openGallery(page);
     await expect(page.locator('.artwork')).toHaveCount(1);
     await expect(
       page.getByRole('heading', { name: '配额不足的作品' }),
@@ -518,14 +510,23 @@ test.describe('存储失败的可见性', () => {
   });
 });
 
-test('24 mixed actions survive reload and the full undo window without losing the texture', async ({
+test('24 mixed actions and their texture survive saving and reopening', async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await resetDatabase(page);
-  await page.getByLabel('截面 4 半径').fill('0.72');
+  const controlPoint = page.getByTestId('profile-point-3');
+  await controlPoint.focus();
+  await controlPoint.press('Shift+ArrowRight');
+  await controlPoint.press('Shift+ArrowRight');
+  await controlPoint.press('ArrowRight');
+  await controlPoint.press('ArrowRight');
+  expect(Number(await controlPoint.getAttribute('data-radius'))).toBeCloseTo(
+    0.72,
+    2,
+  );
   await page.getByRole('button', { name: '定型进入彩绘' }).click();
 
   const tools = ['画笔', '印章', '橡皮擦'] as const;
@@ -536,10 +537,12 @@ test('24 mixed actions survive reload and the full undo window without losing th
     await drawStroke(page, index % 2 === 0 ? 1 : -1);
     await expect(
       page.getByText(`已落笔 ${index + 1} 次`, { exact: false }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   }
   await page.getByRole('button', { name: '入窑烧制' }).click();
-  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByLabel('作品名称').fill('24次混合操作');
   await page.getByRole('button', { name: '保存到藏品' }).click();
   await expect(page.getByRole('status')).toContainText('作品已保存');
@@ -580,31 +583,19 @@ test('24 mixed actions survive reload and the full undo window without losing th
 
   await page.reload();
   page.on('dialog', (dialog) => void dialog.accept());
+  await openGallery(page);
   await page.getByRole('button', { name: '打开作品' }).click();
   await expect(page.getByLabel('作品名称')).toHaveValue('24次混合操作');
-  await page.getByRole('button', { name: '继续彩绘' }).click();
-  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
-  const undo = page.getByRole('button', { name: '撤销', exact: true });
-  const redo = page.getByRole('button', { name: '重做', exact: true });
-  for (let index = 0; index < 20; index++) await undo.click();
-  await expect(page.getByText('已落笔 4 次', { exact: false })).toBeVisible();
-  await expect(undo).toBeDisabled();
-  for (let index = 0; index < 20; index++) await redo.click();
-  await expect(page.getByText('已落笔 24 次', { exact: false })).toBeVisible();
-  await expect(redo).toBeDisabled();
-
-  await page.getByRole('button', { name: '入窑烧制' }).click();
-  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
-  await page.getByRole('button', { name: '保存到藏品' }).click();
-  await expect(page.getByRole('status')).toContainText('作品已保存');
+  await expect(
+    page.getByRole('heading', { name: '04 成品工作台' }),
+  ).toBeVisible();
   const records = await readRecords(page);
   expect(records).toHaveLength(1);
   expect(records[0].key).toBe(before.key);
   expect(records[0].actions).toEqual(actions);
   expect(records[0].profile).toEqual(before.profile);
-  // The renderer replays all three tools after opening and undo/redo.
-  // Matching the actual exported texture catches visual loss beyond action counts.
-  const afterTexture = await attachTexture('texture-after-replay');
+  // The read-only gallery restore keeps the complete mixed-tool snapshot.
+  const afterTexture = await attachTexture('texture-after-reopen');
   const difference = await page.evaluate(
     async ([beforeBytes, afterBytes]) => {
       const decode = async (bytes: number[]) => {

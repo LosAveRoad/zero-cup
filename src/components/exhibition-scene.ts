@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ExhibitionSceneId } from '../types/artwork';
+import { createWoodTexture } from './material-textures';
 import {
   createBackdropCanvas,
   drawInkBackdrop,
@@ -95,6 +96,7 @@ const contactFragment = /* glsl */ `
 /** The scenery is owned by the existing viewport, so preview and export share it. */
 export function createExhibitionScene(id: ThemedSceneId) {
   const theme = THEMES[id];
+  const floorY = id === 'ink' ? -0.18 : FLOOR_Y;
   const group = new THREE.Group();
   const backdrop = new THREE.CanvasTexture(
     createBackdropCanvas(theme.backdrop),
@@ -132,27 +134,43 @@ export function createExhibitionScene(id: ThemedSceneId) {
     }),
   );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = FLOOR_Y;
+  floor.position.y = floorY;
   group.add(floor);
 
   // Stepped lathe profile. The upper surface stays at y = 0, the vessel's foot.
+  const wood = id === 'ink' ? createWoodTexture() : undefined;
+  const inkWoodPlinth = [
+    [0, floorY],
+    [1.04, floorY],
+    [1.09, floorY + 0.035],
+    [1.09, -0.04],
+    [1.04, 0],
+    [0, 0],
+  ];
+  const stonePlinth = [
+    [0, floorY],
+    [1.05, floorY],
+    [1.1, -0.59],
+    [1.1, -0.5],
+    [1.03, -0.46],
+    [1.03, -0.16],
+    [1.13, -0.12],
+    [1.13, -0.042],
+    [1.09, 0],
+    [0, 0],
+  ];
   const plinth = new THREE.Mesh(
     new THREE.LatheGeometry(
-      [
-        [0, FLOOR_Y],
-        [1.05, FLOOR_Y],
-        [1.1, -0.59],
-        [1.1, -0.5],
-        [1.03, -0.46],
-        [1.03, -0.16],
-        [1.13, -0.12],
-        [1.13, -0.042],
-        [1.09, 0],
-        [0, 0],
-      ].map(([radius, height]) => new THREE.Vector2(radius, height)),
+      (id === 'ink' ? inkWoodPlinth : stonePlinth).map(
+        ([radius, height]) => new THREE.Vector2(radius, height),
+      ),
       64,
     ),
-    new THREE.MeshStandardMaterial({ color: theme.stone, roughness: 0.72 }),
+    new THREE.MeshStandardMaterial(
+      wood
+        ? { map: wood.texture, roughness: 0.74 }
+        : { color: theme.stone, roughness: 0.72 },
+    ),
   );
   group.add(plinth);
 
@@ -196,6 +214,8 @@ export function createExhibitionScene(id: ThemedSceneId) {
       }
       backdrop.dispose();
       backdrop.image.width = backdrop.image.height = 0;
+      wood?.texture.dispose();
+      if (wood) wood.canvas.width = wood.canvas.height = 0;
     },
   };
 }

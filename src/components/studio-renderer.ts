@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createExhibitionScene } from './exhibition-scene';
+import { createWoodTexture } from './material-textures';
 import {
   drawFilmFrame,
   filmScenesFor,
@@ -8,7 +9,7 @@ import {
   FILM_WIDTH,
 } from './exhibition-film';
 import { FilmError, recordFilm, type FilmOptions } from './record-film';
-import { sampleProfile } from '../core/geometry/profile';
+import { sampleProfile, VESSEL_BASE_HEIGHT } from '../core/geometry/profile';
 import {
   brushAction,
   eraseAction,
@@ -16,7 +17,7 @@ import {
 } from '../core/painting/actions';
 import {
   azimuthToU,
-  buildRingBandPath,
+  createRotaryPattern,
   drawOffsets,
   extendPath,
   replicatePathBySymmetry,
@@ -27,6 +28,7 @@ import {
 import {
   buildStampGeometry,
   getStampAsset,
+  getStampSvgPaths,
   stampPlacement,
   type StampAssetId,
 } from '../core/painting/stamps';
@@ -55,6 +57,7 @@ import type {
   SymmetryCount,
   UVPoint,
 } from '../types/artwork';
+import type { RotaryPatternId } from '../core/painting/strokes';
 
 /** The painting texture is a fixed 2048×2048 canvas. */
 const TEXTURE = 2048;
@@ -70,20 +73,26 @@ const TAU = Math.PI * 2;
 
 export interface StudioOptions {
   profile: ProfileControlPoint[];
+  /** Physical height multiplier; old saved vessels use the historical value. */
+  heightScale?: number;
   /** Every action that is currently painted, oldest first. */
   actions: PaintingAction[];
   /** 0 = 素坯, 1 = 白釉. */
   glaze: number;
   /** Whether the pointer may leave ink on the vessel. */
   painting: boolean;
+  /** Show the wooden display stand only in the finished-art stage. */
+  showPedestal?: boolean;
   tool: PaintTool;
   brushSize: number;
   color: string;
+  brushOpacity?: number;
   stampAssetId: StampAssetId;
   stampScale: number;
   stampRotation: number;
+  rotaryPattern: RotaryPatternId;
+  rotaryPatternSize: number;
   symmetry?: SymmetryCount;
-  ringBand?: boolean;
   preset: CameraPresetId;
   cameraRevision?: number;
   lightPreset?: LightingPresetId;
@@ -155,6 +164,15 @@ export function createStudio(host: HTMLDivElement) {
   const scratchCanvas = document.createElement('canvas');
   scratchCanvas.width = scratchCanvas.height = TEXTURE;
   const scratchCtx = scratchCanvas.getContext('2d')!;
+  const stampTintCanvas = document.createElement('canvas');
+  const stampTintCtx = stampTintCanvas.getContext('2d')!;
+  const stampImages = new Map<
+    string,
+    { image: HTMLImageElement; ready: Promise<void>; loaded: boolean }
+  >();
+  let stampReplayNeeded = false;
+  let tintedStampImage: HTMLImageElement | undefined;
+  let tintedStampColor = '';
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -195,11 +213,13 @@ export function createStudio(host: HTMLDivElement) {
   footCap.rotation.x = -Math.PI / 2;
   footCap.position.y = 0.005;
   scene.add(footCap);
+  const wood = createWoodTexture();
   const pedestal = new THREE.Mesh(
     new THREE.CylinderGeometry(0.95, 1, 0.12, 64),
-    new THREE.MeshStandardMaterial({ color: '#c4beb1', roughness: 0.8 }),
+    new THREE.MeshStandardMaterial({ map: wood.texture, roughness: 0.74 }),
   );
   pedestal.position.y = -0.06;
+  pedestal.visible = false;
   scene.add(pedestal);
   let exhibition: ReturnType<typeof createExhibitionScene> | undefined;
   let activeScene: ExhibitionSceneId = 'neutral';
@@ -239,12 +259,14 @@ export function createStudio(host: HTMLDivElement) {
 
   let options: StudioOptions | undefined;
   let previousProfile: ProfileControlPoint[] | undefined;
+  let previousHeightScale: number | undefined;
   let previousActions: PaintingAction[] | undefined;
   let previousPreset: CameraPresetId | undefined;
   let previousCameraRevision: number | undefined;
   let rightOrbiting = false;
   let cursorSignature = '';
   let draft: Draft | undefined;
+  let rotaryPreview: PaintingAction[] = [];
   let pointerId: number | undefined;
   /** A left-button press on the finished vessel, promoted to a strike on release. */
   let tapStart:
@@ -307,13 +329,60 @@ export function createStudio(host: HTMLDivElement) {
     }
   }
 
-  /** Draws one stamp motif; only strokes are drawn, so the edges stay clean. */
+  function loadStampImage(url: string) {
+    const cached = stampImages.get(url);
+    if (cached) return cached;
+
+    const image = new Image();
+    image.src = url;
+    const stamp = {
+      image,
+      loaded: false,
+      ready: image.decode().then(() => {
+        stamp.loaded = true;
+        if (lifetime.signal.aborted) return;
+        // Replay in order so a later eraser or brush mark stays above the stamp.
+        stampReplayNeeded = true;
+        scheduleRepaint();
+      }),
+    };
+    stampImages.set(url, stamp);
+    void stamp.ready.catch(() => stampImages.delete(url));
+    return stamp;
+  }
+
+  function tintStampImage(image: HTMLImageElement, color: string) {
+    if (tintedStampImage !== image || tintedStampColor !== color) {
+      stampTintCanvas.width = image.naturalWidth;
+      stampTintCanvas.height = image.naturalHeight;
+      stampTintCtx.drawImage(image, 0, 0);
+      stampTintCtx.globalCompositeOperation = 'source-in';
+      stampTintCtx.fillStyle = color;
+      stampTintCtx.fillRect(
+        0,
+        0,
+        stampTintCanvas.width,
+        stampTintCanvas.height,
+      );
+      tintedStampImage = image;
+      tintedStampColor = color;
+    }
+    return stampTintCanvas;
+  }
+
+  /** Draws a motif on the ink layer, including transparent fills in templates. */
   function drawStamp(
     target: CanvasRenderingContext2D,
     action: Extract<PaintingAction, { type: 'STAMP' }>,
   ) {
     const asset = getStampAsset(action.assetId);
     if (!asset) return;
+    let stampBitmap: HTMLCanvasElement | undefined;
+    if (asset.maskUrl) {
+      const stamp = loadStampImage(asset.maskUrl);
+      if (!stamp.loaded) return;
+      stampBitmap = tintStampImage(stamp.image, action.color);
+    }
     const placement = stampPlacement(
       action.u,
       action.v,
@@ -321,8 +390,15 @@ export function createStudio(host: HTMLDivElement) {
       action.scale,
       action.rotation,
     );
-    const geometry = buildStampGeometry(asset.id);
-    target.globalAlpha = inkOpacityFor(action.color);
+    const svgPaths = asset.svgPaths?.map(({ d, width, fill }) => ({
+      path: new Path2D(d),
+      width,
+      fill,
+    }));
+    const polylines =
+      svgPaths || stampBitmap ? [] : buildStampGeometry(asset.id).paths;
+    const opacity = inkOpacityFor(action.color);
+    target.globalAlpha = opacity;
     target.strokeStyle = action.color;
     target.fillStyle = action.color;
     target.lineCap = 'round';
@@ -330,17 +406,45 @@ export function createStudio(host: HTMLDivElement) {
     for (const offset of [-TEXTURE, 0, TEXTURE]) {
       target.save();
       target.translate(placement.x + offset, placement.y);
+      if (action.footprint) {
+        target.scale(
+          (action.footprint.u * TEXTURE) / placement.size,
+          (action.footprint.v * TEXTURE) / placement.size,
+        );
+      }
       target.rotate(placement.rotation);
-      const unit = placement.size / 2;
-      for (const path of geometry.paths) {
-        target.lineWidth = path.width * unit;
-        target.beginPath();
-        path.points.forEach(([x, y], index) => {
-          if (index === 0) target.moveTo(x * unit, -y * unit);
-          else target.lineTo(x * unit, -y * unit);
-        });
-        if (path.closed) target.closePath();
-        target.stroke();
+      const radius = placement.size / 2;
+      if (stampBitmap) {
+        target.drawImage(
+          stampBitmap,
+          -radius,
+          -radius,
+          placement.size,
+          placement.size,
+        );
+      } else if (svgPaths) {
+        target.translate(-radius, -radius);
+        target.scale(placement.size / 100, placement.size / 100);
+        for (const { path, width, fill } of svgPaths) {
+          target.globalAlpha = opacity * (fill ?? 1);
+          if (width !== undefined) {
+            target.lineWidth = width;
+            target.stroke(path);
+          } else {
+            target.fill(path, 'evenodd');
+          }
+        }
+      } else {
+        for (const path of polylines) {
+          target.lineWidth = path.width * radius;
+          target.beginPath();
+          path.points.forEach(([x, y], index) => {
+            if (index === 0) target.moveTo(x * radius, -y * radius);
+            else target.lineTo(x * radius, -y * radius);
+          });
+          if (path.closed) target.closePath();
+          target.stroke();
+        }
       }
       target.restore();
     }
@@ -369,10 +473,15 @@ export function createStudio(host: HTMLDivElement) {
       target.globalCompositeOperation = 'source-over';
       return;
     }
-    const copies = replicatePointBySymmetry(
-      { u: action.u, v: action.v },
-      action.symmetry ?? 1,
-    );
+    const copies = action.repeatCount
+      ? Array.from({ length: action.repeatCount }, (_, index) => ({
+          u: action.u + index / action.repeatCount!,
+          v: action.v,
+        }))
+      : replicatePointBySymmetry(
+          { u: action.u, v: action.v },
+          action.symmetry ?? 1,
+        );
     for (const copy of copies) {
       drawStamp(target, { ...action, u: copy.u, v: copy.v });
     }
@@ -406,6 +515,10 @@ export function createStudio(host: HTMLDivElement) {
 
   /** Composites body + ink (+ the live draft) onto the texture source. */
   function composite() {
+    if (stampReplayNeeded) {
+      stampReplayNeeded = false;
+      replayAll(previousActions ?? []);
+    }
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.fillStyle = BASE_COLOUR;
@@ -423,6 +536,12 @@ export function createStudio(host: HTMLDivElement) {
     } else {
       ctx.drawImage(patternCanvas, 0, 0);
       if (draft) drawAction(ctx, draft);
+    }
+    if (rotaryPreview.length) {
+      ctx.save();
+      ctx.globalAlpha = 0.58;
+      rotaryPreview.forEach((action) => drawAction(ctx, action));
+      ctx.restore();
     }
     if (options && options.glaze >= 1) {
       if (options.glazeFinish === 'crackle') {
@@ -650,42 +769,55 @@ export function createStudio(host: HTMLDivElement) {
     if (current.tool === 'stamp') {
       const asset = getStampAsset(current.stampAssetId);
       if (!asset) return;
-      const geometry = buildStampGeometry(asset.id);
-      const previewRadius = (asset.size * current.stampScale * 0.22) / 2;
+      const previewScale = (asset.size * current.stampScale * 0.22) / 100;
       const deg = (current.stampRotation * 180) / Math.PI;
       const motifGroup = document.createElementNS(
         'http://www.w3.org/2000/svg',
         'g',
       );
-      motifGroup.setAttribute('transform', `rotate(${deg.toFixed(1)})`);
+      motifGroup.setAttribute(
+        'transform',
+        `rotate(${deg.toFixed(1)}) scale(${previewScale}) translate(-50 -50)`,
+      );
       motifGroup.setAttribute('opacity', '0.72');
-      for (const path of geometry.paths) {
-        const el = document.createElementNS(
+      if (asset.maskUrl) {
+        const rect = document.createElementNS(
           'http://www.w3.org/2000/svg',
-          'path',
+          'rect',
         );
-        const d = path.points
-          .map(
-            ([x, y], idx) =>
-              `${idx === 0 ? 'M' : 'L'}${(x * previewRadius).toFixed(1)} ${(-y * previewRadius).toFixed(1)}`,
-          )
-          .join(' ');
-        el.setAttribute('d', path.closed ? `${d} Z` : d);
-        el.setAttribute('fill', 'none');
-        el.setAttribute('stroke', current.color);
-        el.setAttribute(
-          'stroke-width',
-          String(Math.max(1.2, path.width * previewRadius)),
-        );
-        el.setAttribute('stroke-linecap', 'round');
-        el.setAttribute('stroke-linejoin', 'round');
-        motifGroup.appendChild(el);
-      }
+        rect.setAttribute('class', 'stamp-wash');
+        rect.setAttribute('width', '100');
+        rect.setAttribute('height', '100');
+        rect.setAttribute('fill', current.color);
+        rect.style.maskImage = `url("${asset.maskUrl}")`;
+        motifGroup.appendChild(rect);
+      } else
+        for (const { d, width, fill } of getStampSvgPaths(asset.id)) {
+          const el = document.createElementNS(
+            'http://www.w3.org/2000/svg',
+            'path',
+          );
+          el.setAttribute('d', d);
+          el.setAttribute('fill', fill === undefined ? 'none' : current.color);
+          el.setAttribute('fill-rule', 'evenodd');
+          el.setAttribute('fill-opacity', String(fill ?? 1));
+          if (width !== undefined) {
+            el.setAttribute('stroke', current.color);
+            el.setAttribute('stroke-width', String(width));
+          }
+          el.setAttribute('stroke-linecap', 'round');
+          el.setAttribute('stroke-linejoin', 'round');
+          motifGroup.appendChild(el);
+        }
       cursorGroup.appendChild(motifGroup);
       appendCalligraphyBrush(cursorGroup, current.color);
       return;
     }
     if (current.tool === 'brush') {
+      appendCalligraphyBrush(cursorGroup, current.color);
+      return;
+    }
+    if (current.tool === 'rotary') {
       appendCalligraphyBrush(cursorGroup, current.color);
       return;
     }
@@ -894,6 +1026,10 @@ export function createStudio(host: HTMLDivElement) {
 
   function hideCursor() {
     cursorSvg.style.display = 'none';
+    if (rotaryPreview.length) {
+      rotaryPreview = [];
+      scheduleRepaint();
+    }
     delete cursorSvg.dataset.cursor;
     delete renderer.domElement.dataset.cursor;
     renderer.domElement.style.cursor = '';
@@ -954,6 +1090,22 @@ export function createStudio(host: HTMLDivElement) {
     setBrushPressState(true);
     const hitPoint = hit(event);
     if (!hitPoint) return;
+    if (options.tool === 'rotary') {
+      const actions = createRotaryPattern(
+        options.rotaryPattern,
+        options.color,
+        hitPoint.u,
+        hitPoint.v,
+        options.rotaryPatternSize,
+        options.profile,
+        options.heightScale ?? 1,
+      );
+      rotaryPreview = [];
+      actions.forEach((action) => options?.onAction(action));
+      setBrushPressState(false);
+      scheduleRepaint();
+      return;
+    }
     if (options.tool === 'stamp') {
       const asset = getStampAsset(options.stampAssetId);
       if (!asset) return;
@@ -972,16 +1124,16 @@ export function createStudio(host: HTMLDivElement) {
     renderer.domElement.setPointerCapture(pointerId);
     lastTheta = hitPoint.theta;
     lastU = hitPoint.u;
-    const isRingBand = options.tool === 'brush' && Boolean(options.ringBand);
     draft = {
       type: options.tool === 'eraser' ? 'ERASE' : 'BRUSH',
-      path: isRingBand
-        ? buildRingBandPath(hitPoint.v)
-        : [{ u: hitPoint.u, v: hitPoint.v }],
+      path: [{ u: hitPoint.u, v: hitPoint.v }],
       size: options.brushSize,
       color: options.color,
-      opacity: options.tool === 'eraser' ? 1 : inkOpacityFor(options.color),
-      symmetry: isRingBand ? 1 : options.symmetry,
+      opacity:
+        options.tool === 'eraser'
+          ? 1
+          : (options.brushOpacity ?? inkOpacityFor(options.color)),
+      symmetry: options.symmetry,
     };
     scheduleRepaint();
   }
@@ -1021,6 +1173,25 @@ export function createStudio(host: HTMLDivElement) {
         'transform',
         `translate(${localX.toFixed(1)}, ${localY.toFixed(1)})`,
       );
+      if (options.tool === 'rotary') {
+        const hitPoint = hit(event);
+        const nextPreview = hitPoint
+          ? createRotaryPattern(
+              options.rotaryPattern,
+              options.color,
+              hitPoint.u,
+              hitPoint.v,
+              options.rotaryPatternSize,
+              options.profile,
+              options.heightScale ?? 1,
+            )
+          : [];
+        rotaryPreview = nextPreview;
+        scheduleRepaint();
+      } else if (rotaryPreview.length) {
+        rotaryPreview = [];
+        scheduleRepaint();
+      }
       return;
     }
     if (!draft || pointerId !== event.pointerId) return;
@@ -1040,11 +1211,6 @@ export function createStudio(host: HTMLDivElement) {
       commitDraft();
       lastTheta = undefined;
       lastU = undefined;
-      scheduleRepaint();
-      return;
-    }
-    if (options?.tool === 'brush' && options.ringBand) {
-      draft.path = buildRingBandPath(hitPoint.v);
       scheduleRepaint();
       return;
     }
@@ -1186,10 +1352,17 @@ export function createStudio(host: HTMLDivElement) {
     controls.autoRotate = Boolean(next.autoRotate);
     controls.autoRotateSpeed = 2.2;
     wireframeMesh.visible = Boolean(next.wireframe);
-    if (previousProfile !== next.profile) {
+    if (
+      previousProfile !== next.profile ||
+      previousHeightScale !== (next.heightScale ?? 1)
+    ) {
       const sampled = sampleProfile(next.profile);
+      const physicalHeight = (height: number) =>
+        height * VESSEL_BASE_HEIGHT * (next.heightScale ?? 1);
       const geometry = new THREE.LatheGeometry(
-        sampled.map((p) => new THREE.Vector2(p.radius, p.height * 2.8)),
+        sampled.map(
+          (p) => new THREE.Vector2(p.radius, physicalHeight(p.height)),
+        ),
         48,
       );
       geometry.computeVertexNormals();
@@ -1204,7 +1377,7 @@ export function createStudio(host: HTMLDivElement) {
         height: 1,
       };
       const outerRimR = topSample.radius;
-      const topY = topSample.height * 2.8;
+      const topY = physicalHeight(topSample.height);
       const lipT = Math.min(wallThickness, outerRimR * 0.24);
       const lipMidR = outerRimR - lipT / 2;
       const lipHalf = lipT / 2;
@@ -1225,7 +1398,7 @@ export function createStudio(host: HTMLDivElement) {
         innerProfilePoints.push(
           new THREE.Vector2(
             Math.max(0.035, p.radius - localT),
-            Math.max(wallThickness, p.height * 2.8),
+            Math.max(wallThickness, physicalHeight(p.height)),
           ),
         );
       }
@@ -1239,8 +1412,10 @@ export function createStudio(host: HTMLDivElement) {
       footCap.geometry.dispose();
       footCap.geometry = new THREE.CircleGeometry(footRadius, 48);
       previousProfile = next.profile;
+      previousHeightScale = next.heightScale ?? 1;
     }
     setExhibitionScene(next.exhibitionScene ?? 'neutral');
+    pedestal.visible = Boolean(next.showPedestal) && !exhibition;
     exhibition?.setFootRadius(next.profile[0]?.radius ?? 0.2);
     syncActions(next.actions);
     applyGlaze(next);
@@ -1261,6 +1436,19 @@ export function createStudio(host: HTMLDivElement) {
         controls.update();
       }
     }
+  }
+
+  async function waitForStampImages() {
+    const pending = new Set<Promise<void>>();
+    for (const action of previousActions ?? []) {
+      if (action.type !== 'STAMP') continue;
+      const url = getStampAsset(action.assetId)?.maskUrl;
+      if (!url) continue;
+      const stamp = loadStampImage(url);
+      if (!stamp.loaded) pending.add(stamp.ready);
+    }
+    await Promise.all(pending);
+    lifetime.signal.throwIfAborted();
   }
 
   async function video(filmOptions: FilmOptions) {
@@ -1298,7 +1486,7 @@ export function createStudio(host: HTMLDivElement) {
       if (visibleBackdrop === backdrop) return;
       if (visibleBackdrop) visibleBackdrop.group.visible = false;
       if (backdrop) backdrop.group.visible = true;
-      pedestal.visible = !backdrop;
+      pedestal.visible = Boolean(studioOptions.showPedestal) && !backdrop;
       applyLighting(studioOptions, backdrop);
       visibleBackdrop = backdrop;
     };
@@ -1306,6 +1494,8 @@ export function createStudio(host: HTMLDivElement) {
     filming = true;
     signal.addEventListener('abort', disposeExtraScenes, { once: true });
     try {
+      await waitForStampImages();
+      signal.throwIfAborted();
       hideCursor();
       tapStart = undefined;
       controls.enabled = false;
@@ -1367,7 +1557,7 @@ export function createStudio(host: HTMLDivElement) {
       filming = false;
       if (!lifetime.signal.aborted) {
         if (exhibition) exhibition.group.visible = true;
-        pedestal.visible = !exhibition;
+        pedestal.visible = Boolean(studioOptions.showPedestal) && !exhibition;
         applyLighting(studioOptions, exhibition);
         controls.enabled = previousControls;
         wireframeMesh.visible = previousWireframe;
@@ -1378,6 +1568,8 @@ export function createStudio(host: HTMLDivElement) {
   }
 
   async function snapshot(name: string): Promise<Blob> {
+    await waitForStampImages();
+    if (repaintQueued || stampReplayNeeded) composite();
     const size = renderer.getSize(new THREE.Vector2()),
       aspect = camera.aspect;
     const layout = layoutFor({ name, date: new Date() });
@@ -1438,6 +1630,7 @@ export function createStudio(host: HTMLDivElement) {
 
   /** The 2048 painting texture, stored alongside the finished photo. */
   async function paintTexture(): Promise<Blob> {
+    await waitForStampImages();
     composite();
     return await new Promise((resolve, reject) =>
       canvas.toBlob(
@@ -1469,6 +1662,8 @@ export function createStudio(host: HTMLDivElement) {
     frontU,
     dispose() {
       lifetime.abort();
+      stampImages.clear();
+      stampTintCanvas.width = stampTintCanvas.height = 0;
       cancelAnimationFrame(frame);
       cancelAnimationFrame(repaintFrame);
       window.clearTimeout(strikeResetTimer);
@@ -1497,6 +1692,8 @@ export function createStudio(host: HTMLDivElement) {
       exhibition?.dispose();
       pedestal.geometry.dispose();
       pedestal.material.dispose();
+      wood.texture.dispose();
+      wood.canvas.width = wood.canvas.height = 0;
       renderer.dispose();
       renderer.domElement.remove();
     },

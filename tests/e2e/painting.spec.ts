@@ -465,7 +465,7 @@ test.describe('印章 / stamps', () => {
     expect(errors).toEqual([]);
   });
 
-  test('缩放与旋转只作用于下一枚印章，落印后控件复位', async ({ page }) => {
+  test('缩放与旋转设定后，连续落印保留相同属性', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
@@ -473,6 +473,20 @@ test.describe('印章 / stamps', () => {
     await expect(canvas).toBeVisible();
     let box = await enterPainting(page);
     await page.getByRole('button', { name: '印章', exact: true }).click();
+
+    const scale = page.getByRole('slider', { name: '印章缩放' });
+    const rotation = page.getByRole('slider', { name: '印章旋转' });
+    await expect(
+      page.getByRole('group', { name: '非遗对称工艺' }),
+    ).toBeVisible();
+    await expect(scale).toHaveValue('1');
+    await expect(rotation).toHaveValue('0');
+
+    // 放大后再落一枚印，印章应当比默认尺寸大。
+    await scale.fill('2');
+    await rotation.fill('45');
+    await expect(scale).toHaveValue('2');
+    await expect(rotation).toHaveValue('45');
     box = await settleCanvas(page);
     const stats = await analyse(page, Math.floor(box.height * 0.5));
     const spot = toPage(
@@ -481,43 +495,14 @@ test.describe('印章 / stamps', () => {
       stats.span.left + 25,
       Math.floor(stats.height * 0.42),
     );
-
-    const scale = page.getByLabel('印章缩放');
-    const rotation = page.getByLabel('印章旋转');
-    await expect(scale).toHaveValue('1');
-    await expect(rotation).toHaveValue('0');
-
-    // 放大后再落一枚印，印章应当比默认尺寸大。
-    await scale.fill('2');
+    await page.mouse.click(spot.x, spot.y);
+    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
     await expect(scale).toHaveValue('2');
-    await page.mouse.click(spot.x, spot.y);
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
-    const scaled = await analyse(page, Math.floor(box.height * 0.5));
-    const scaledBox = scaled.inkBox!;
-
-    // 缩放和旋转只属于这一枚印章，落印后控件回到默认值。
-    await expect(scale).toHaveValue('1');
-    await expect(rotation).toHaveValue('0');
-    await expect(page.locator('label', { hasText: '印章缩放' })).toContainText(
-      '1.00 倍',
-    );
-    await expect(page.locator('label', { hasText: '印章旋转' })).toContainText(
-      '0°',
-    );
-
-    // 同一位置用默认尺寸再落一枚，面积应当更小。
-    await page.getByRole('button', { name: '撤销', exact: true }).click();
-    await expect(page.getByText('已落笔 0 次', { exact: false })).toBeVisible();
-    await page.mouse.click(spot.x, spot.y);
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
-    const plain = await analyse(page, Math.floor(box.height * 0.5));
-    const plainBox = plain.inkBox!;
-    expect(plainBox.maxX - plainBox.minX).toBeLessThan(
-      scaledBox.maxX - scaledBox.minX,
-    );
-    expect(plainBox.maxY - plainBox.minY).toBeLessThan(
-      scaledBox.maxY - scaledBox.minY,
-    );
+    await expect(rotation).toHaveValue('45');
+    await page.mouse.click(spot.x + 28, spot.y + 10);
+    await expect(page.getByText('已落笔 2 次', { exact: false })).toBeVisible();
+    await expect(scale).toHaveValue('2');
+    await expect(rotation).toHaveValue('45');
 
     expect(errors).toEqual([]);
   });
@@ -554,17 +539,16 @@ test.describe('视角与接缝 / view and seam', () => {
     }
 
     // 转到背面：接缝那笔不应该把整圈贴图都画上。
-    await page.getByRole('button', { name: '旋转视角' }).click();
     const rotated = await settleCanvas(page);
     const middle = rotated.y + rotated.height / 2;
     await page.mouse.move(rotated.x + rotated.width * 0.85, middle);
-    await page.mouse.down();
+    await page.mouse.down({ button: 'right' });
     await page.mouse.move(
       rotated.x + rotated.width * 0.85 - rotated.height * 0.5,
       middle,
       { steps: 20 },
     );
-    await page.mouse.up();
+    await page.mouse.up({ button: 'right' });
     await waitForStableView(page);
     const back = await analyse(page, row);
     expect(back.totalInk).toBe(0);
@@ -579,13 +563,8 @@ test.describe('视角与接缝 / view and seam', () => {
     const canvas = page.getByLabel(CANVAS_LABEL);
     await expect(canvas).toBeVisible();
     const box = await enterPainting(page);
-    await page.getByRole('button', { name: '旋转视角' }).click();
-    await expect(
-      page.getByRole('button', { name: '旋转视角' }),
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(
-      page.getByRole('button', { name: '绘制模式' }),
-    ).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('button', { name: '旋转视角' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '绘制模式' })).toHaveCount(0);
 
     const stats = await analyse(page, Math.floor(box.height * 0.52));
     const row = Math.floor(stats.height * 0.52);
@@ -593,9 +572,9 @@ test.describe('视角与接缝 / view and seam', () => {
     const to = toPage(box, stats, stats.span.right - 10, row);
 
     await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
+    await page.mouse.down({ button: 'right' });
     await page.mouse.move(to.x, to.y, { steps: 12 });
-    await page.mouse.up();
+    await page.mouse.up({ button: 'right' });
     await expect(page.getByText('已落笔 0 次', { exact: false })).toBeVisible();
     await expect(
       page.getByRole('button', { name: '撤销', exact: true }),

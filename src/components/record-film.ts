@@ -1,6 +1,8 @@
 import { FILM_DURATION_MS, FILM_HEIGHT, FILM_WIDTH } from './exhibition-film';
 
-const FRAME_RATE = 30;
+// A 15 fps stream keeps the 720p timeline from shortening when scene rendering
+// cannot sustain 24 fps (for example, software-rendered Chromium).
+const FRAME_RATE = 15;
 const FORMATS = [
   {
     mimeType: 'video/mp4;codecs=avc1.42001f',

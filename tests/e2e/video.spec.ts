@@ -14,6 +14,7 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
 
   await page.goto('/?prologue=skip');
   await page.getByRole('button', { name: '定型进入彩绘' }).click();
+  await page.getByRole('button', { name: '模版', exact: true }).click();
   await page.getByRole('button', { name: /缠枝宝相莲/ }).click();
   await page.getByRole('button', { name: '入窑烧制' }).click();
   const generate = page.getByRole('button', { name: '生成演示视频' });
@@ -123,7 +124,9 @@ test('展陈短片可取消重试，导出后可播放且可继续导出 PNG', a
   // The vessel stays visible in the middle of both dissolves.
   const vesselIndex = (8 * 32 + 16) * 4;
   expect(firstTransition[vesselIndex]).toBeGreaterThan(125);
-  expect(secondTransition[vesselIndex]).toBeGreaterThan(125);
+  // The lattice room uses lower light than the ink room; keep a visible-pixel
+  // floor without requiring the same brightness in both transitions.
+  expect(secondTransition[vesselIndex]).toBeGreaterThan(40);
   for (let i = 1; i < result.samples.length; i++) {
     const previous = result.samples[i - 1];
     const difference = result.samples[i].reduce(

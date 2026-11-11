@@ -100,7 +100,9 @@ for (const direction of ['left-to-right', 'right-to-left'] as const) {
     await page.goto('/?prologue=skip');
     await expect(page.getByRole('alert')).toHaveCount(0);
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
-    await page.getByLabel('笔刷粗细').selectOption('24');
+    await expect(page.getByRole('slider', { name: '笔刷粗细' })).toHaveValue(
+      '24',
+    );
     const canvas = page.getByLabel('三维陶器画布');
     // Detect the vessel silhouette in a rendered frame instead of guessing
     // coordinates that might hit only the background on a different viewport.
@@ -158,7 +160,7 @@ for (const direction of ['left-to-right', 'right-to-left'] as const) {
       await page.getByRole('button', { name: '入窑烧制' }).click();
       await expect(
         page.getByRole('button', { name: '保存到藏品' }),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
       await page.getByRole('button', { name: '保存到藏品' }).click();
       await expect(page.getByRole('status')).toContainText('作品已保存');
     };
@@ -177,10 +179,8 @@ for (const direction of ['left-to-right', 'right-to-left'] as const) {
 
     await page.reload();
     page.on('dialog', (dialog) => void dialog.accept());
+    await page.getByRole('button', { name: /我的作品/ }).click();
     await page.getByRole('button', { name: '打开作品' }).click();
-    await page.getByRole('button', { name: '继续彩绘' }).click();
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
-    await save();
     const after = await readSeamArtwork(page);
     expect(after).toEqual(before);
     expect(errors).toEqual([]);

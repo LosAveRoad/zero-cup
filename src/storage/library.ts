@@ -22,6 +22,7 @@ import { del, entries, get, set } from 'idb-keyval';
 import type { UseStore } from 'idb-keyval';
 import { EXHIBITION_SCENE_IDS } from '../types/artwork';
 import { brushAction } from '../core/painting/actions';
+import { VESSEL_HEIGHT_SCALE_RANGE } from '../core/geometry/profile';
 import type {
   GlazeFinishId,
   LegacyStroke,
@@ -92,6 +93,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isUvSpan(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0 && value <= 1;
+}
+
+function parseStampFootprint(raw: unknown): UVPoint | undefined {
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw) || !isUvSpan(raw.u) || !isUvSpan(raw.v)) {
+    throw corrupt('印章纹样尺寸无效');
+  }
+  return { u: raw.u, v: raw.v };
+}
+
+function parseStampRepeatCount(raw: unknown): number | undefined {
+  if (raw === undefined) return undefined;
+  if (!isFiniteNumber(raw) || !Number.isInteger(raw) || raw < 2 || raw > 256) {
+    throw corrupt('印章环绕数量无效');
+  }
+  return raw;
 }
 
 function isBlobLike(value: unknown): value is Blob {
@@ -322,7 +343,9 @@ function validateActions(raw: unknown): PaintingAction[] {
           throw corrupt('印章缩放无效');
         }
         if (!isFiniteNumber(action.rotation)) throw corrupt('印章旋转无效');
+        const footprint = parseStampFootprint(action.footprint);
         const symmetry = parseSymmetry(action.symmetry);
+        const repeatCount = parseStampRepeatCount(action.repeatCount);
         return {
           type: 'STAMP',
           u: action.u,
@@ -331,7 +354,9 @@ function validateActions(raw: unknown): PaintingAction[] {
           color: action.color,
           scale: action.scale,
           rotation: action.rotation,
+          ...(footprint ? { footprint } : {}),
           ...(symmetry ? { symmetry } : {}),
+          ...(repeatCount ? { repeatCount } : {}),
         };
       }
       case 'ERASE': {
@@ -383,6 +408,15 @@ export function validateArtwork(raw: unknown): StudioArtworkV2 {
     actions: validateActions(raw.actions),
     image: validateImage(raw.image),
   };
+  if (raw.heightScale !== undefined) {
+    if (
+      !isFiniteNumber(raw.heightScale) ||
+      raw.heightScale < VESSEL_HEIGHT_SCALE_RANGE.min ||
+      raw.heightScale > VESSEL_HEIGHT_SCALE_RANGE.max
+    )
+      throw corrupt('器身高度缩放无效');
+    artwork.heightScale = raw.heightScale;
+  }
   if (raw.texture !== undefined) artwork.texture = validateImage(raw.texture);
   if (raw.challengeId !== undefined) {
     if (typeof raw.challengeId !== 'string') throw corrupt('挑战标识无效');

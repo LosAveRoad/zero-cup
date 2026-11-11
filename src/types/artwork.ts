@@ -10,7 +10,7 @@ export interface UVPoint {
 }
 
 /** The mutually exclusive painting tools of the studio. */
-export type PaintTool = 'brush' | 'eraser' | 'stamp';
+export type PaintTool = 'brush' | 'eraser' | 'stamp' | 'rotary';
 export type SymmetryCount = 1 | 2 | 4 | 6 | 8;
 export type PaintingAction =
   | {
@@ -29,7 +29,11 @@ export type PaintingAction =
       color: string;
       scale: number;
       rotation: number;
+      /** Full width and height in UV units for motifs fitted to the vessel. */
+      footprint?: UVPoint;
       symmetry?: SymmetryCount;
+      /** Equally space this stamp around the full circumference. */
+      repeatCount?: number;
     }
   | { type: 'ERASE'; path: UVPoint[]; size: number };
 export interface ArtworkMetadata {
@@ -85,6 +89,8 @@ export interface StudioArtworkV2 {
   createdAt: number;
   updatedAt: number;
   profile: ProfileControlPoint[];
+  /** Optional physical height multiplier; old v2 records use the default 1. */
+  heightScale?: number;
   actions: PaintingAction[];
   image: Blob;
   texture?: Blob;

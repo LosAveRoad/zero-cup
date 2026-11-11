@@ -1,6 +1,11 @@
 import { brushAction, stampAction } from './actions';
+import { INKS } from './inks';
+import type { StampAssetId } from './stamps';
+import type { ChallengeId } from '../challenges/challenges';
+import { sampleProfile, VESSEL_BASE_HEIGHT } from '../geometry/profile';
 import type {
   PaintingAction,
+  ProfileControlPoint,
   SymmetryCount,
   UVPoint,
 } from '../../types/artwork';
@@ -20,29 +25,97 @@ export const SYMMETRY_OPTIONS: readonly {
 ];
 
 export type MasterpiecePresetId =
-  'imperial_lotus' | 'cloud_collar' | 'classic_bands';
+  'imperial_lotus' | 'three_fruits' | 'horse_cup';
 
 export const MASTERPIECE_PRESETS: readonly {
   id: MasterpiecePresetId;
   name: string;
   subtitle: string;
+  reference: ChallengeId;
 }[] = [
   {
     id: 'imperial_lotus',
     name: '缠枝宝相莲',
-    subtitle: '六方缠枝莲与海水江崖通景',
+    subtitle: '蕉叶束颈，浓淡莲瓣与卷枝铺满瓶腹',
+    reference: 'yuhuchun',
   },
   {
-    id: 'cloud_collar',
-    name: '四方云肩纹',
-    subtitle: '如意云头开光配团花雅制',
+    id: 'three_fruits',
+    name: '折枝三果',
+    subtitle: '桃、石榴与佛手各占一面，仰莲收足',
+    reference: 'meiping',
   },
   {
-    id: 'classic_bands',
-    name: '宋韵青花弦',
-    subtitle: '浓淡分水箍线与折枝莲纹',
+    id: 'horse_cup',
+    name: '留白走马',
+    subtitle: '双弦纹围住大片留白，两面各绘一马',
+    reference: 'yazhbei',
   },
 ];
+
+export type RotaryPatternId =
+  'linked-wave' | 'straight-line' | 'leaf' | 'filled-lotus' | 'key-fret';
+
+export type RotaryPattern = {
+  id: RotaryPatternId;
+  name: string;
+  subtitle: string;
+  /** Which seamless, repeatable path is laid out around the vessel. */
+  shape: 'wave' | 'line' | 'stamp';
+  assetId?: StampAssetId;
+};
+
+export const ROTARY_PATTERNS: readonly RotaryPattern[] = [
+  {
+    id: 'linked-wave',
+    name: '连绵水波',
+    subtitle: '首尾相接的起伏水线，整圈连续',
+    shape: 'wave',
+  },
+  {
+    id: 'straight-line',
+    name: '直线环带',
+    subtitle: '沿器身画一圈平直线条',
+    shape: 'line',
+  },
+  {
+    id: 'leaf',
+    name: '叶片连饰',
+    subtitle: '按手绘叶形轴对称排列一周',
+    shape: 'stamp',
+    assetId: 'rotary-leaf',
+  },
+  {
+    id: 'filled-lotus',
+    name: '团莲环饰',
+    subtitle: '蓝色填面团莲，轴对称连续排列一周',
+    shape: 'stamp',
+    assetId: 'filled-lotus',
+  },
+  {
+    id: 'key-fret',
+    name: '回纹连方',
+    subtitle: '方折回纹首尾相扣，构成连续边饰',
+    shape: 'stamp',
+    assetId: 'blue-key-fret',
+  },
+];
+
+export const ROTARY_PATTERN_SIZE_RANGE = { min: 0.5, max: 6, step: 0.1 };
+// The silhouette metric converts diameter with radius * 20, so one radius
+// unit represents 10 cm around the lathe circumference.
+const PROFILE_RADIUS_CM = 10;
+const PROFILE_HEIGHT_UNIT_CM = 10;
+
+export function rotaryRepeatCount(radius: number, desiredSizeCm: number) {
+  return Math.max(
+    1,
+    Math.floor(
+      (2 * Math.PI * Math.max(0, radius) * PROFILE_RADIUS_CM) /
+        Math.max(0.1, desiredSizeCm),
+    ),
+  );
+}
 
 /**
  * Two samples closer than this (in uv units, i.e. ~5 texture pixels) describe
@@ -278,138 +351,187 @@ export function replicatePointBySymmetry(
   }));
 }
 
+function rotaryLinePath(
+  centerU: number,
+  centerV: number,
+  segments: number,
+): UVPoint[] {
+  const steps = Math.max(4, Math.floor(segments));
+  const v = clamp01(centerV);
+  return Array.from({ length: steps + 1 }, (_, index) => ({
+    u: centerU + index / steps,
+    v,
+  }));
+}
+
+function rotaryLineAction(
+  centerU: number,
+  centerV: number,
+  color: string,
+  size: number,
+  opacity = 1,
+  segments = 64,
+): PaintingAction {
+  return brushAction(rotaryLinePath(centerU, centerV, segments), {
+    size,
+    color,
+    opacity,
+  });
+}
+
 /**
  * Builds a continuous horizontal potter's wheel ring band ("旋坯弦纹 / 箍线")
  * around the vessel circumference at height `v`.
  */
 export function buildRingBandPath(v: number, segments = 16): UVPoint[] {
-  const clampedV = clamp01(v);
-  const steps = Math.max(4, Math.floor(segments));
-  return Array.from({ length: steps + 1 }, (_, i) => ({
-    u: i / steps,
-    v: clampedV,
-  }));
+  return rotaryLinePath(0, v, segments);
 }
 
-/**
- * Generates a curated sequence of blue-and-white porcelain painting commands
- * combining potter's wheel collar rings and radial symmetric motifs.
- */
-export function createMasterpiecePreset(
-  id: MasterpiecePresetId,
+/** Builds a tiled rotary motif; physical motif width and brush weight share one size scale. */
+export function createRotaryPattern(
+  id: RotaryPatternId,
+  color: string,
+  centerU: number,
+  centerV: number,
+  desiredSizeCm: number,
+  profile: ProfileControlPoint[],
+  heightScale = 1,
 ): PaintingAction[] {
-  if (id === 'imperial_lotus') {
+  const pattern = ROTARY_PATTERNS.find((item) => item.id === id);
+  if (!pattern) throw new Error('Unknown rotary pattern');
+  const atHeight = sampleProfile(profile).reduce((nearest, point) =>
+    Math.abs(point.height - centerV) < Math.abs(nearest.height - centerV)
+      ? point
+      : nearest,
+  );
+  const repeatCount = rotaryRepeatCount(atHeight.radius, desiredSizeCm);
+  const motifHeight = Math.min(
+    0.22,
+    Math.max(
+      0.012,
+      desiredSizeCm /
+        (VESSEL_BASE_HEIGHT * PROFILE_HEIGHT_UNIT_CM * heightScale),
+    ),
+  );
+  // Keep the ink line proportional to each tile's width, so dense small leaves
+  // retain visible gaps instead of merging into a row of arches.
+  const brushSize = Math.max(
+    2,
+    Math.min(30, Math.round((TEXTURE_SIZE / repeatCount) * 0.055)),
+  );
+  const center = wrapU(centerU);
+  const startU = center - 0.5 / repeatCount;
+  if (pattern.shape === 'line') {
+    return [rotaryLineAction(center, centerV, color, brushSize)];
+  }
+  if (pattern.shape === 'stamp') {
     return [
-      brushAction(buildRingBandPath(0.88), {
-        size: 14,
-        color: '#174a94',
-        opacity: 1,
-      }),
-      brushAction(buildRingBandPath(0.84), {
-        size: 8,
-        color: '#547fb2',
-        opacity: 0.78,
-      }),
-      stampAction(0.08, 0.72, {
-        assetId: 'cloud',
-        color: '#547fb2',
-        scale: 0.85,
-        rotation: 0,
-        symmetry: 6,
-      }),
-      stampAction(0, 0.48, {
-        assetId: 'lotus',
-        color: '#174a94',
-        scale: 1.15,
-        rotation: 0,
-        symmetry: 6,
-      }),
-      stampAction(0.06, 0.22, {
-        assetId: 'seaside',
-        color: '#174a94',
-        scale: 0.95,
-        rotation: 0,
-        symmetry: 8,
-      }),
-      brushAction(buildRingBandPath(0.1), {
-        size: 14,
-        color: '#174a94',
-        opacity: 1,
+      stampAction(center, centerV, {
+        assetId: pattern.assetId!,
+        color,
+        footprint: {
+          u: (pattern.id === 'leaf' ? 1.04 : 1) / repeatCount,
+          v: motifHeight,
+        },
+        repeatCount,
       }),
     ];
   }
-  if (id === 'cloud_collar') {
+  const points: UVPoint[] = [];
+  const stepsPerTile = 32;
+  for (let step = 0; step <= repeatCount * stepsPerTile; step++) {
+    const progress = step / (repeatCount * stepsPerTile);
+    const phase = (progress * repeatCount) % 1;
+    const x = startU + progress;
+    const baseline = centerV;
+    let wave = 0;
+    if (pattern.shape === 'wave') wave = Math.sin(phase * Math.PI * 2) * 0.35;
+    points.push({ u: x, v: clamp01(baseline + wave * motifHeight) });
+  }
+  // Keep the loop closed at the UV seam and centre one repeat on the hover point.
+  points[points.length - 1] = { u: startU + 1, v: points[0].v };
+  return [brushAction(points, { size: brushSize, color })];
+}
+
+/** Adapts museum compositions into the same editable actions as hand painting. */
+export function createMasterpiecePreset(
+  id: MasterpiecePresetId,
+  frontU: number,
+  profile: ProfileControlPoint[],
+  heightScale: number,
+): PaintingAction[] {
+  const sampled = sampleProfile(profile);
+  const segments = sampled.length - 1;
+  const ring = (v: number, size: number, ink = INKS[0]) =>
+    rotaryLineAction(0, v, ink.value, size, ink.opacity, 16);
+  const motif = (
+    assetId: StampAssetId,
+    v: number,
+    maxHeight: number,
+    maxWidth: number,
+    options: {
+      phase?: number;
+      symmetry?: SymmetryCount;
+      rotation?: number;
+    } = {},
+  ) => {
+    // LatheGeometry distributes V across the same evenly sampled heights.
+    // Match one UV unit along the profile to one UV unit around this row.
+    const row = v * segments;
+    const index = Math.floor(row);
+    const lower = sampled[index];
+    const upper = sampled[index + 1];
+    const radiusChange = upper.radius - lower.radius;
+    const radius = lower.radius + radiusChange * (row - index);
+    const meridian = Math.hypot(
+      VESSEL_BASE_HEIGHT * heightScale,
+      radiusChange * segments,
+    );
+    const aspect = meridian / (TAU * radius);
+    const spanV = Math.min(maxHeight, maxWidth / aspect);
+    return stampAction(wrapU(frontU + (options.phase ?? 0)), v, {
+      assetId,
+      color: INKS[0].value,
+      footprint: { u: Math.min(maxWidth, spanV * aspect), v: spanV },
+      rotation: options.rotation ?? 0,
+      ...(options.symmetry ? { repeatCount: options.symmetry } : {}),
+    });
+  };
+
+  if (id === 'imperial_lotus') {
     return [
-      brushAction(buildRingBandPath(0.9), {
-        size: 12,
-        color: '#174a94',
-        opacity: 1,
-      }),
-      stampAction(0, 0.76, {
-        assetId: 'cloud',
-        color: '#174a94',
-        scale: 1.1,
+      ring(0.967, 14),
+      motif('museum-spear', 0.881, 0.16, 0.2, { symmetry: 8 }),
+      ring(0.801, 8, INKS[1]),
+      motif('museum-fret', 0.763, 0.064, 0.123, { symmetry: 8 }),
+      ring(0.725, 13),
+      motif('museum-lotus', 0.461, 0.485, 0.495, { symmetry: 2 }),
+      motif('museum-lappet', 0.155, 0.105, 0.121, { symmetry: 8 }),
+      ring(0.093, 11, INKS[1]),
+      ring(0.07, 13),
+    ];
+  }
+  if (id === 'three_fruits') {
+    return [
+      ring(0.94, 15),
+      motif('museum-lappet', 0.849, 0.142, 0.12, {
+        symmetry: 8,
         rotation: Math.PI,
-        symmetry: 4,
       }),
-      brushAction(buildRingBandPath(0.62), {
-        size: 8,
-        color: '#9ab6d5',
-        opacity: 0.55,
-      }),
-      stampAction(0.125, 0.45, {
-        assetId: 'lotus',
-        color: '#547fb2',
-        scale: 1.05,
-        rotation: 0,
-        symmetry: 4,
-      }),
-      stampAction(0, 0.2, {
-        assetId: 'seaside',
-        color: '#174a94',
-        scale: 0.9,
-        rotation: 0,
-        symmetry: 6,
-      }),
-      brushAction(buildRingBandPath(0.08), {
-        size: 12,
-        color: '#174a94',
-        opacity: 1,
-      }),
+      ring(0.765, 9, INKS[1]),
+      motif('museum-pomegranate', 0.525, 0.445, 0.31),
+      motif('museum-peach', 0.525, 0.445, 0.31, { phase: 1 / 3 }),
+      motif('museum-citron', 0.525, 0.445, 0.31, { phase: 2 / 3 }),
+      ring(0.28, 9, INKS[1]),
+      motif('museum-lappet', 0.173, 0.168, 0.121, { symmetry: 8 }),
+      ring(0.078, 14),
     ];
   }
   return [
-    brushAction(buildRingBandPath(0.86), {
-      size: 10,
-      color: '#174a94',
-      opacity: 1,
-    }),
-    brushAction(buildRingBandPath(0.82), {
-      size: 20,
-      color: '#9ab6d5',
-      opacity: 0.55,
-    }),
-    brushAction(buildRingBandPath(0.56), {
-      size: 10,
-      color: '#547fb2',
-      opacity: 0.78,
-    }),
-    stampAction(0.25, 0.46, {
-      assetId: 'lotus',
-      color: '#174a94',
-      scale: 1,
-      rotation: 0,
-      symmetry: 2,
-    }),
-    brushAction(buildRingBandPath(0.36), {
-      size: 10,
-      color: '#547fb2',
-      opacity: 0.78,
-    }),
-    brushAction(buildRingBandPath(0.12), {
-      size: 16,
-      color: '#174a94',
-      opacity: 1,
-    }),
+    ring(0.958, 15),
+    ring(0.904, 9, INKS[1]),
+    motif('museum-horse', 0.515, 0.5, 0.32, { symmetry: 2 }),
+    ring(0.134, 9, INKS[1]),
+    ring(0.089, 13),
   ];
 }

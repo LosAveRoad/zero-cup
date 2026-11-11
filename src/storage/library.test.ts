@@ -237,6 +237,11 @@ describe('storage library', () => {
     }
   });
 
+  it('round-trips a custom vessel height scale', () => {
+    const validated = validateArtwork({ ...makeV2(), heightScale: 0.72 });
+    expect(validated.heightScale).toBe(0.72);
+  });
+
   it('rejects broken legacy v1 records', () => {
     const cases: unknown[] = [
       { ...makeV1(), strokes: 'nope' },
@@ -356,6 +361,8 @@ describe('storage library', () => {
           color: '#174a94',
           scale: 1.5,
           rotation: Math.PI,
+          footprint: { u: 0.27, v: 0.4 },
+          repeatCount: 12,
         },
         { type: 'ERASE', path: [{ u: 0.2, v: 0.3 }], size: 30 },
       ],
@@ -367,7 +374,23 @@ describe('storage library', () => {
   });
 
   it('rejects broken stamp and erase commands', () => {
+    const stamp = {
+      type: 'STAMP',
+      u: 0.5,
+      v: 0.5,
+      assetId: 'museum-horse',
+      color: '#174a94',
+      scale: 1,
+      rotation: 0,
+    };
     const cases: unknown[] = [
+      { ...stamp, footprint: null },
+      { ...stamp, footprint: { u: 0, v: 0.4 } },
+      { ...stamp, footprint: { u: 0.3, v: 1.01 } },
+      { ...stamp, footprint: { u: 0.3, v: NaN } },
+      { ...stamp, repeatCount: 1 },
+      { ...stamp, repeatCount: 2.5 },
+      { ...stamp, repeatCount: 257 },
       {
         type: 'STAMP',
         u: 'x',

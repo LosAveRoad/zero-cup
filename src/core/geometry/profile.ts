@@ -16,6 +16,16 @@ export const PROFILE_LIMITS = {
   maxPoints: 10,
 } as const;
 
+/** Physical height of the vessel when its height multiplier is 1. */
+export const VESSEL_BASE_HEIGHT = 2.8;
+
+/** Physical height multiplier for the vessel while keeping its outline valid. */
+export const VESSEL_HEIGHT_SCALE_RANGE = {
+  min: 0.55,
+  max: 1.4,
+  default: 1,
+} as const;
+
 export type ProfileTemplateId = 'bottle' | 'meiping' | 'cup' | 'melon';
 
 export interface SampledProfilePoint {

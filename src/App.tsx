@@ -6,6 +6,7 @@ import { ChallengePanel } from './components/ChallengePanel';
 import { FiringPanel } from './components/FiringPanel';
 import { ProfileEditor } from './components/ProfileEditor';
 import { ToolPanel } from './components/ToolPanel';
+import { WikiPanel } from './components/WikiPanel';
 import {
   getChallenge,
   silhouetteScore,
@@ -13,8 +14,7 @@ import {
 } from './core/challenges/challenges';
 import {
   createProfile,
-  moveControlPoint,
-  type ProfileTemplateId,
+  VESSEL_HEIGHT_SCALE_RANGE,
 } from './core/geometry/profile';
 import {
   FIRING_DURATION_MS,
@@ -29,7 +29,6 @@ import type {
   PaintTool,
   SymmetryCount,
 } from './types/artwork';
-import { stampAction } from './core/painting/actions';
 import {
   canRedo,
   canUndo,
@@ -42,18 +41,17 @@ import {
 import {
   createMasterpiecePreset,
   type MasterpiecePresetId,
+  type RotaryPatternId,
 } from './core/painting/strokes';
-import type { StampAssetId } from './core/painting/stamps';
+import { STAMP_ASSETS, type StampAssetId } from './core/painting/stamps';
 import type { CameraPresetId } from './core/export/capture';
 import type { LightingPresetId } from './core/materials/lighting';
 import {
-  currentPorcelainMelodyTitle,
   playBrushSound,
   playKilnIgniteSound,
   playPorcelainChime,
   playPorcelainTapSound,
   playWheelTone,
-  resetPorcelainMelody,
 } from './components/sound-effects';
 import {
   deleteArtwork,
@@ -67,13 +65,6 @@ import type { StudioArtworkV2 } from './types/artwork';
 type Stage = 'shaping' | 'painting' | 'firing' | 'exhibition';
 const stages: Stage[] = ['shaping', 'painting', 'firing', 'exhibition'];
 const labels = ['拉坯', '彩绘', '烧制', '成品'];
-const PROFILE_TEMPLATES: ProfileTemplateId[] = [
-  'bottle',
-  'meiping',
-  'cup',
-  'melon',
-];
-
 const KILN_EMBERS = Array.from({ length: 16 }, (_, i) => {
   const left = 14 + ((i * 19) % 72);
   const bottom = 2 + ((i * 7) % 24);
@@ -124,25 +115,37 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export function App() {
   const [profile, setProfile] = useState(createProfile);
+  const [heightScale, setHeightScale] = useState<number>(
+    VESSEL_HEIGHT_SCALE_RANGE.default,
+  );
   const [history, setHistory] = useState(createHistory);
   const [stage, setStage] = useState<Stage>('shaping');
-  const [painting, setPainting] = useState(true);
+  const [toolPanelMode, setToolPanelMode] = useState<'draw' | 'template'>(
+    'draw',
+  );
   const [tool, setTool] = useState<PaintTool>('brush');
   const [brushSize, setBrushSize] = useState(24);
   const [color, setColor] = useState('#174a94');
-  const [stampAssetId, setStampAssetId] = useState<StampAssetId>('lotus');
+  const [inkConcentration, setInkConcentration] = useState(100);
+  const [brushOpacity, setBrushOpacity] = useState(1);
+  const [stampAssetId, setStampAssetId] = useState<StampAssetId>(
+    STAMP_ASSETS[0].id,
+  );
   const [stampScale, setStampScale] = useState(1);
   const [stampRotation, setStampRotation] = useState(0);
+  const [rotaryPattern, setRotaryPattern] =
+    useState<RotaryPatternId>('linked-wave');
+  const [rotaryPatternSize, setRotaryPatternSize] = useState(1.8);
   const [symmetry, setSymmetry] = useState<SymmetryCount>(1);
-  const [ringBand, setRingBand] = useState(false);
   const [challengeId, setChallengeId] = useState<ChallengeId | undefined>(
     undefined,
   );
+  const [wikiOpen, setWikiOpen] = useState(false);
   const [preset, setPreset] = useState<CameraPresetId>('front');
   const [cameraRevision, setCameraRevision] = useState(0);
   const [lightPreset, setLightPreset] = useState<LightingPresetId>('studio');
   const [exhibitionScene, setExhibitionScene] =
-    useState<ExhibitionSceneId>('neutral');
+    useState<ExhibitionSceneId>('ink');
   const [glazeFinish, setGlazeFinish] = useState<GlazeFinishId>('white');
   const [autoRotate, setAutoRotate] = useState(false);
   const [wireframe, setWireframe] = useState(false);
@@ -154,12 +157,12 @@ export function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('prologue') === 'skip';
   });
-  const [melodyTitle, setMelodyTitle] = useState(currentPorcelainMelodyTitle);
   const [glaze, setGlaze] = useState(0);
   const [firingProgress, setFiringProgress] = useState(0);
   const [name, setName] = useState('我的第一件青花瓷');
-  const [notice, setNotice] = useState('拖动二维轮廓点，开始塑造你的器型。');
+  const [notice, setNotice] = useState('');
   const [gallery, setGallery] = useState<StudioArtworkV2[]>([]);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [damaged, setDamaged] = useState<DamagedRecord[]>([]);
   const [busy, setBusy] = useState(false);
   const [multipleScenes, setMultipleScenes] = useState(true);
@@ -174,6 +177,19 @@ export function App() {
   const visible = visibleActions(history);
   const challenge = challengeId ? getChallenge(challengeId) : undefined;
   const score = challenge ? silhouetteScore(profile, challenge.profile) : 0;
+  function chooseOpeningGoal(id: ChallengeId | undefined) {
+    setChallengeId(id);
+    setProfile(
+      id ? (getChallenge(id)?.profile ?? createProfile()) : createProfile(),
+    );
+    setHeightScale(VESSEL_HEIGHT_SCALE_RANGE.default);
+    setWikiOpen(false);
+    setPrologueDismissed(true);
+    playPorcelainChime(soundEnabled);
+  }
+  function chooseWikiGoal(id: ChallengeId | undefined) {
+    chooseOpeningGoal(id);
+  }
   const refreshGallery = () =>
     listGallery().then((listing) => {
       setGallery(listing.artworks);
@@ -202,10 +218,9 @@ export function App() {
       }
       if (finished) return;
       finished = true;
-      setMelodyTitle(resetPorcelainMelody());
       playPorcelainChime(soundEnabledRef.current);
       setStage('exhibition');
-      setNotice('烧制完成！叩之声如磬，请为作品命名、赏析或收藏。');
+      setNotice('');
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
@@ -237,14 +252,14 @@ export function App() {
   function addAction(action: PaintingAction) {
     setHistory((old) => pushAction(old, action));
     playBrushSound(soundEnabled, action.type === 'STAMP');
-    // Scale and rotation belong to one stamp only.
-    if (action.type === 'STAMP') {
-      setStampScale(1);
-      setStampRotation(0);
-    }
   }
   function applyMasterpiece(presetId: MasterpiecePresetId) {
-    const presetActions = createMasterpiecePreset(presetId);
+    const presetActions = createMasterpiecePreset(
+      presetId,
+      viewport.current?.frontU() ?? 0,
+      profile,
+      heightScale,
+    );
     setHistory((old) => {
       let next = old;
       for (const act of presetActions) {
@@ -255,46 +270,33 @@ export function App() {
     playBrushSound(soundEnabled, true);
     setNotice('已绘入传统名品青花纹饰，可继续添笔创作或直接入窑烧制。');
   }
-  function imprintContourToVessel(customId: StampAssetId) {
-    const targetU = viewport.current?.frontU() ?? 0.125;
-    setHistory((old) =>
-      pushAction(
-        old,
-        stampAction(targetU, 0.5, {
-          assetId: customId,
-          color,
-          scale: stampScale,
-          rotation: stampRotation,
-          symmetry,
-        }),
-      ),
-    );
-    playBrushSound(soundEnabled, true);
-    setNotice(
-      '已提取图片轮廓并拓印于瓶身正中，也可在器物表面点击任意位置继续落印。',
-    );
-  }
   function reset() {
     if (!window.confirm('新建会放弃未保存的修改，继续吗？')) return;
     setProfile(createProfile());
+    setHeightScale(VESSEL_HEIGHT_SCALE_RANGE.default);
     setName('我的第一件青花瓷');
-    setPainting(true);
+    setToolPanelMode('draw');
     setTool('brush');
+    setBrushSize(24);
+    setColor('#174a94');
+    setInkConcentration(100);
+    setBrushOpacity(1);
     setSymmetry(1);
-    setRingBand(false);
     setHistory(createHistory());
     setStage('shaping');
     setGlaze(0);
     setFiringProgress(0);
     setChallengeId(undefined);
+    setWikiOpen(true);
+    setPrologueDismissed(true);
     setPreset('front');
     setCameraRevision((rev) => rev + 1);
     setLightPreset('studio');
-    setExhibitionScene('neutral');
+    setExhibitionScene('ink');
     setGlazeFinish('white');
     setAutoRotate(false);
     currentId.current = crypto.randomUUID();
-    setNotice('新作品已准备好。');
+    setNotice('请选择本次创作的器形。');
   }
   async function download() {
     setBusy(true);
@@ -347,6 +349,7 @@ export function App() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         profile,
+        heightScale,
         actions: visible,
         image,
         texture,
@@ -406,6 +409,7 @@ export function App() {
     if (!window.confirm('打开作品会替换当前未保存的修改，继续吗？')) return;
     currentId.current = artwork.id;
     setProfile(artwork.profile);
+    setHeightScale(artwork.heightScale ?? VESSEL_HEIGHT_SCALE_RANGE.default);
     setHistory({
       actions: artwork.actions,
       cursor: artwork.actions.length,
@@ -421,9 +425,8 @@ export function App() {
     setFiringProgress(1);
     setGlazeFinish(artwork.glazeFinish ?? 'white');
     setLightPreset(artwork.lightPreset ?? 'studio');
-    setExhibitionScene(artwork.exhibitionScene ?? 'neutral');
-    setMelodyTitle(resetPorcelainMelody());
-    setNotice('已恢复器型与完整彩绘。');
+    setExhibitionScene(artwork.exhibitionScene ?? 'ink');
+    setNotice('');
   }
   return (
     <div className="app">
@@ -551,33 +554,60 @@ export function App() {
               <span>入窑千度化天青</span>
               <span>轻叩成器奏五音</span>
             </p>
-            <button
-              type="button"
-              className="scroll-seal"
-              aria-label="入坊造物"
-              tabIndex={prologueDismissed ? -1 : 0}
-              onClick={() => {
-                setPrologueDismissed(true);
-                playPorcelainChime(soundEnabled);
-              }}
+            <div
+              className="scroll-goals"
+              role="group"
+              aria-label="选择创作方式"
             >
-              造物
-            </button>
+              <button
+                type="button"
+                className="scroll-seal"
+                tabIndex={prologueDismissed ? -1 : 0}
+                onClick={() => chooseOpeningGoal(undefined)}
+              >
+                自由创作
+              </button>
+              <button
+                type="button"
+                className="scroll-encyclopedia"
+                tabIndex={prologueDismissed ? -1 : 0}
+                aria-label="器型百科：浏览所有器型"
+                onClick={() => setWikiOpen(true)}
+              >
+                <span className="encyclopedia-stamp" aria-hidden="true">
+                  百
+                </span>
+                <span>
+                  <strong>器型百科</strong>
+                  <small>浏览器型介绍 · 选择创作目标</small>
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
       <header>
-        <div>
-          <span className="eyebrow">PORCELAIN TALES</span>
-          <h1>瓷器物语</h1>
+        <div className="brand-lockup">
+          <h1 aria-label="瓷器物语">瓷器物语</h1>
         </div>
-        <button
-          className="quiet"
-          disabled={stage === 'firing' || busy}
-          onClick={reset}
-        >
-          新建作品
-        </button>
+        <div className="header-actions" role="group" aria-label="作品操作">
+          <button
+            type="button"
+            className="header-gallery"
+            aria-expanded={galleryOpen}
+            onClick={() => setGalleryOpen(true)}
+          >
+            我的作品 <span>{gallery.length}</span>
+          </button>
+          <button
+            type="button"
+            className="header-new-work"
+            disabled={stage === 'firing' || busy}
+            onClick={reset}
+          >
+            新建作品
+          </button>
+        </div>
       </header>
       <nav aria-label="制作阶段">
         {labels.map((label, i) => (
@@ -591,58 +621,41 @@ export function App() {
       </nav>
       <div className="workspace">
         <aside>
-          <h2>{labels[stages.indexOf(stage)]}工作台</h2>
+          {stage === 'shaping' ? (
+            <h2 data-step="01" aria-label="01 拉坯工作台">
+              拉坯工作台
+            </h2>
+          ) : (
+            <h2 data-step={`0${stages.indexOf(stage) + 1}`}>
+              {labels[stages.indexOf(stage)]}工作台
+            </h2>
+          )}
           {stage === 'shaping' && (
             <>
-              <p>拖动二维轮廓点塑形，或用滑块微调半径。</p>
               <ProfileEditor
                 points={profile}
+                heightScale={heightScale}
+                onHeightScaleChange={setHeightScale}
                 onChange={(nextPoints) => {
                   setProfile(nextPoints);
                   playWheelTone(soundEnabled, nextPoints[3]?.radius ?? 0.5);
                 }}
-                templates={PROFILE_TEMPLATES}
                 targetPoints={challenge?.profile}
                 onReset={() => {
-                  setProfile(createProfile());
+                  setProfile(challenge?.profile ?? createProfile());
+                  setHeightScale(VESSEL_HEIGHT_SCALE_RANGE.default);
                   playWheelTone(soundEnabled, 0.5);
                 }}
               />
-              <div className="sliders">
-                {[...profile].reverse().map((p) => (
-                  <label key={p.id}>
-                    截面 {Number(p.id.split('-')[1]) + 1}
-                    <input
-                      aria-label={`截面 ${Number(p.id.split('-')[1]) + 1} 半径`}
-                      type="range"
-                      min="0.08"
-                      max="0.9"
-                      step="0.01"
-                      value={p.radius}
-                      onChange={(e) =>
-                        setProfile((old) =>
-                          moveControlPoint(old, p.id, {
-                            radius: Number(e.target.value),
-                          }),
-                        )
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
               <ChallengePanel
                 challenge={challenge}
-                onChallengeChange={setChallengeId}
                 score={challenge ? score : undefined}
-                onApplyTarget={() => {
-                  if (challenge) setProfile(challenge.profile);
-                }}
               />
               <button
                 className="sticky-action"
                 onClick={() => {
                   setStage('painting');
-                  setNotice('在器物上按住左键绘制，切换旋转模式查看另一面。');
+                  setNotice('');
                 }}
               >
                 定型进入彩绘
@@ -651,28 +664,22 @@ export function App() {
           )}
           {stage === 'painting' && (
             <>
-              <p>在器物表面画线；切换视角后可继续画另一面。</p>
-              <div className="segmented">
-                <button
-                  aria-pressed={painting}
-                  onClick={() => setPainting(true)}
-                >
-                  绘制模式
-                </button>
-                <button
-                  aria-pressed={!painting}
-                  onClick={() => setPainting(false)}
-                >
-                  旋转视角
-                </button>
-              </div>
               <ToolPanel
+                mode={toolPanelMode}
+                onModeChange={setToolPanelMode}
                 tool={tool}
-                onToolChange={setTool}
+                onToolChange={(nextTool) => {
+                  setTool(nextTool);
+                  setAutoRotate(nextTool === 'rotary');
+                }}
                 brushSize={brushSize}
                 onBrushSizeChange={setBrushSize}
                 color={color}
                 onColorChange={setColor}
+                brushOpacity={brushOpacity}
+                onBrushOpacityChange={setBrushOpacity}
+                inkConcentration={inkConcentration}
+                onInkConcentrationChange={setInkConcentration}
                 stampAssetId={stampAssetId}
                 onStampAssetChange={setStampAssetId}
                 stampScale={stampScale}
@@ -681,10 +688,11 @@ export function App() {
                 onStampRotationChange={setStampRotation}
                 symmetry={symmetry}
                 onSymmetryChange={setSymmetry}
-                ringBand={ringBand}
-                onRingBandChange={setRingBand}
+                rotaryPattern={rotaryPattern}
+                onRotaryPatternChange={setRotaryPattern}
+                rotaryPatternSize={rotaryPatternSize}
+                onRotaryPatternSizeChange={setRotaryPatternSize}
                 onApplyMasterpiece={applyMasterpiece}
-                onImprintContour={imprintContourToVessel}
               />
               <div className="segmented">
                 <button
@@ -795,17 +803,6 @@ export function App() {
               <button disabled={busy} onClick={() => void save()}>
                 保存到藏品
               </button>
-              <button
-                className="quiet"
-                disabled={busy}
-                onClick={() => {
-                  setGlaze(0);
-                  setFiringProgress(0);
-                  setStage('painting');
-                }}
-              >
-                继续彩绘
-              </button>
             </>
           )}
         </aside>
@@ -813,17 +810,21 @@ export function App() {
           <Viewport
             ref={viewport}
             profile={profile}
+            heightScale={heightScale}
             actions={visible}
             glaze={glaze}
-            painting={stage === 'painting' && painting}
+            painting={stage === 'painting'}
+            showPedestal={stage === 'exhibition'}
             tool={tool}
             brushSize={brushSize}
             color={color}
+            brushOpacity={brushOpacity}
             stampAssetId={stampAssetId}
             stampScale={stampScale}
             stampRotation={stampRotation}
-            symmetry={symmetry}
-            ringBand={ringBand}
+            rotaryPattern={rotaryPattern}
+            rotaryPatternSize={rotaryPatternSize}
+            symmetry={tool === 'stamp' ? symmetry : 1}
             preset={preset}
             cameraRevision={cameraRevision}
             lightPreset={lightPreset}
@@ -836,7 +837,6 @@ export function App() {
             onAction={addAction}
             onTapVessel={() => {
               const res = playPorcelainTapSound();
-              setMelodyTitle(currentPorcelainMelodyTitle());
               return res.noteLabel;
             }}
           />
@@ -863,9 +863,6 @@ export function App() {
               onClick={() => {
                 const next = !autoRotate;
                 setAutoRotate(next);
-                if (next && stage === 'painting' && painting) {
-                  setPainting(false);
-                }
               }}
             >
               {autoRotate ? '⟳ 转盘自转中' : '↻ 转盘漫游'}
@@ -896,15 +893,6 @@ export function App() {
             <span className="mote m5" />
             <span className="mote m6" />
           </div>
-          {stage !== 'firing' && (
-            <div className="scene-hint">
-              {stage === 'painting' && painting
-                ? '左键绘制 · 右键拖动旋转视角 · Ctrl+Z 撤销'
-                : stage === 'exhibition'
-                  ? `轻叩瓷身奏响五声${melodyTitle} · 拖动旋转 · 滚轮缩放`
-                  : '拖动旋转 · 滚轮缩放'}
-            </div>
-          )}
           {stage === 'firing' && (
             <div className="fire-overlay" aria-hidden="true">
               <div className="kiln-flame-base" />
@@ -934,45 +922,97 @@ export function App() {
           )}
         </section>
       </div>
-      <p role="status" className="notice">
-        {notice}
-      </p>
-      <section className="gallery">
-        <div className="gallery-heading">
-          <h2>我的藏瓷阁</h2>
-          <span>本地收藏 / {gallery.length}</span>
+      {notice && (
+        <p role="status" className="notice">
+          {notice}
+        </p>
+      )}
+      {prologueDismissed && (
+        <button
+          type="button"
+          className="wiki-toggle"
+          aria-label="器型百科"
+          aria-expanded={wikiOpen}
+          onClick={() => setWikiOpen((open) => !open)}
+        >
+          <span aria-hidden="true">百</span>
+          <small>百科</small>
+        </button>
+      )}
+      <WikiPanel
+        currentChallengeId={challenge?.id}
+        open={wikiOpen}
+        onClose={() => setWikiOpen(false)}
+        onSelectChallenge={chooseWikiGoal}
+      />
+      {galleryOpen && (
+        <div
+          className="gallery-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setGalleryOpen(false);
+          }}
+        >
+          <section
+            className="gallery"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="gallery-title"
+          >
+            <div className="gallery-heading">
+              <div>
+                <span className="eyebrow">LOCAL COLLECTION</span>
+                <h2 id="gallery-title">我的作品</h2>
+              </div>
+              <div className="gallery-heading-actions">
+                <span>本地收藏 / {gallery.length}</span>
+                <button
+                  type="button"
+                  className="quiet gallery-close"
+                  aria-label="关闭我的作品"
+                  onClick={() => setGalleryOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            {damaged.length > 0 && (
+              <div className="damaged-banner">
+                <p className="muted">
+                  有 {damaged.length}{' '}
+                  件旧作品无法读取，已隔离保存，不影响其它作品。
+                </p>
+                <button
+                  type="button"
+                  className="quiet"
+                  disabled={busy || stage === 'firing'}
+                  onClick={() => void clearDamaged()}
+                >
+                  清理损坏记录
+                </button>
+              </div>
+            )}
+            {gallery.length === 0 ? (
+              <p className="muted">完成第一件作品后，可在这里继续创作。</p>
+            ) : (
+              <div className="gallery-grid">
+                {gallery.map((a) => (
+                  <ArtworkCard
+                    key={a.id}
+                    artwork={a}
+                    disabled={busy || stage === 'firing'}
+                    onOpen={() => {
+                      setGalleryOpen(false);
+                      open(a);
+                    }}
+                    onDelete={() => void remove(a.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </div>
-        {damaged.length > 0 && (
-          <div className="damaged-banner">
-            <p className="muted">
-              有 {damaged.length} 件旧作品无法读取，已隔离保存，不影响其它作品。
-            </p>
-            <button
-              type="button"
-              className="quiet"
-              disabled={busy || stage === 'firing'}
-              onClick={() => void clearDamaged()}
-            >
-              清理损坏记录
-            </button>
-          </div>
-        )}
-        {gallery.length === 0 ? (
-          <p className="muted">完成第一件作品，存入你的藏瓷阁。</p>
-        ) : (
-          <div className="gallery-grid">
-            {gallery.map((a) => (
-              <ArtworkCard
-                key={a.id}
-                artwork={a}
-                disabled={busy || stage === 'firing'}
-                onOpen={() => open(a)}
-                onDelete={() => void remove(a.id)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      )}
     </div>
   );
 }

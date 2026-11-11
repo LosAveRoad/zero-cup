@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createProfile, sampleProfile } from '../geometry/profile';
+import { getStampAsset } from './stamps';
 import {
   MASTERPIECE_PRESETS,
+  ROTARY_PATTERNS,
   MIN_POINT_DISTANCE,
   SEAM_SPLIT_THRESHOLD,
   SYMMETRY_OPTIONS,
@@ -9,11 +12,13 @@ import {
   azimuthToU,
   buildRingBandPath,
   createMasterpiecePreset,
+  createRotaryPattern,
   drawOffsets,
   extendPath,
   mergePath,
   replicatePathBySymmetry,
   replicatePointBySymmetry,
+  rotaryRepeatCount,
   shortestAngleDelta,
   splitSegment,
   unwrapTheta,
@@ -247,11 +252,217 @@ describe('symmetry, ring bands and masterpiece presets', () => {
     expect(ring[8]).toEqual({ u: 1, v: 0.75 });
   });
 
-  it('creates all classic blue-and-white masterpiece action sequences', () => {
-    expect(MASTERPIECE_PRESETS).toHaveLength(3);
-    for (const preset of MASTERPIECE_PRESETS) {
-      const actions = createMasterpiecePreset(preset.id);
+  it('builds three distinct museum-inspired compositions from paint actions', () => {
+    const expected = [
+      ['museum-spear', 'museum-fret', 'museum-lotus', 'museum-lappet'],
+      [
+        'museum-lappet',
+        'museum-pomegranate',
+        'museum-peach',
+        'museum-citron',
+        'museum-lappet',
+      ],
+      ['museum-horse'],
+    ];
+    expect(MASTERPIECE_PRESETS.map((preset) => preset.reference)).toEqual([
+      'yuhuchun',
+      'meiping',
+      'yazhbei',
+    ]);
+    for (const [index, preset] of MASTERPIECE_PRESETS.entries()) {
+      const actions = createMasterpiecePreset(
+        preset.id,
+        0.9,
+        createProfile(),
+        1,
+      );
       expect(actions.length).toBeGreaterThanOrEqual(5);
+      const stamps = actions.filter((action) => action.type === 'STAMP');
+      expect(stamps.map((action) => action.assetId)).toEqual(expected[index]);
+      for (const stamp of stamps) {
+        expect(getStampAsset(stamp.assetId)?.svgPaths?.length).toBeGreaterThan(
+          0,
+        );
+        expect(
+          getStampAsset(stamp.assetId)?.svgPaths?.some(
+            (path) => path.fill !== undefined,
+          ),
+        ).toBe(true);
+        expect(stamp.u).toBeGreaterThanOrEqual(0);
+        expect(stamp.u).toBeLessThan(1);
+      }
+      const rings = actions.filter((action) => action.type === 'BRUSH');
+      expect(
+        rings.every(
+          (ring) => ring.path[0].u === 0 && ring.path.at(-1)?.u === 1,
+        ),
+      ).toBe(true);
     }
+    const horse = createMasterpiecePreset(
+      'horse_cup',
+      0.9,
+      createProfile(),
+      1,
+    ).find((action) => action.type === 'STAMP');
+    expect(horse).toMatchObject({ u: 0.9, repeatCount: 2 });
+    expect(horse).not.toHaveProperty('symmetry');
+    const spear = createMasterpiecePreset(
+      'imperial_lotus',
+      0.9,
+      createProfile(),
+      1,
+    ).find((action) => action.type === 'STAMP');
+    expect(spear).toMatchObject({ repeatCount: 8 });
+  });
+
+  it('compensates the horizontal UV footprint for the height and radius of the vessel', () => {
+    for (const [bottom, top, height] of [
+      [0.5, 0.5, 0.55],
+      [0.5, 0.5, 1.4],
+      [0.34, 0.74, 1],
+    ]) {
+      const profile = createProfile().map((point) => ({
+        ...point,
+        radius: bottom + (top - bottom) * point.height,
+      }));
+      const horse = createMasterpiecePreset(
+        'horse_cup',
+        0,
+        profile,
+        height,
+      ).find((action) => action.type === 'STAMP')!;
+      const { u, v } = horse.footprint!;
+      const radius = bottom + (top - bottom) * horse.v;
+      expect(u / v).toBeCloseTo(
+        Math.hypot(2.8 * height, top - bottom) / (2 * Math.PI * radius),
+      );
+      expect(u).toBeLessThanOrEqual(0.32);
+      expect(v).toBeLessThanOrEqual(0.5);
+    }
+  });
+
+  it('floors motif count to fit the circumference, then tiles a seamless loop', () => {
+    const radius = 0.6;
+    const size = 0.8;
+    const profile = createProfile();
+    const actualRadius = sampleProfile(profile).reduce((nearest, point) =>
+      Math.abs(point.height - 0.5) < Math.abs(nearest.height - 0.5)
+        ? point
+        : nearest,
+    ).radius;
+    const expectedRepeats = Math.floor(
+      (2 * Math.PI * actualRadius * 10) / size,
+    );
+    expect(rotaryRepeatCount(radius, size)).toBe(
+      Math.floor((2 * Math.PI * radius * 10) / size),
+    );
+
+    const [wave] = createRotaryPattern(
+      'linked-wave',
+      '#174a94',
+      0.25,
+      0.5,
+      size,
+      profile,
+    );
+    expect(wave.type).toBe('BRUSH');
+    if (wave.type === 'BRUSH') {
+      expect(wave.path).toHaveLength(expectedRepeats * 32 + 1);
+      expect(wave.path[0].u).toBeCloseTo(0.25 - 0.5 / expectedRepeats);
+      expect(wave.path[16].u).toBeCloseTo(0.25);
+      expect(wave.path.at(-1)?.u).toBeCloseTo(1.25 - 0.5 / expectedRepeats);
+      expect(wave.path[0].v).toBe(wave.path.at(-1)?.v);
+    }
+    const [keyFret] = createRotaryPattern(
+      'key-fret',
+      '#174a94',
+      0.25,
+      0.5,
+      size,
+      profile,
+    );
+    expect(keyFret.type).toBe('STAMP');
+    if (keyFret.type === 'STAMP') expect(keyFret.assetId).toBe('blue-key-fret');
+  });
+
+  it('adds a straight ring and scales the filled symmetric leaf footprint', () => {
+    expect(ROTARY_PATTERNS.map(({ id }) => id)).toEqual([
+      'linked-wave',
+      'straight-line',
+      'leaf',
+      'filled-lotus',
+      'key-fret',
+    ]);
+    const profile = createProfile();
+    const line = createRotaryPattern(
+      'straight-line',
+      '#174a94',
+      0.2,
+      0.5,
+      2,
+      profile,
+    );
+    expect(line).toHaveLength(1);
+    expect(line[0].type).toBe('BRUSH');
+    if (line[0].type === 'BRUSH')
+      expect(line[0].path.every(({ v }) => v === 0.5)).toBe(true);
+
+    const smallLeaf = createRotaryPattern(
+      'leaf',
+      '#174a94',
+      0.2,
+      0.5,
+      1.5,
+      profile,
+    );
+    const largeLeaf = createRotaryPattern(
+      'leaf',
+      '#174a94',
+      0.2,
+      0.5,
+      3,
+      profile,
+    );
+    expect(smallLeaf).toHaveLength(1);
+    expect(largeLeaf).toHaveLength(1);
+    expect(largeLeaf[0].type).toBe('STAMP');
+    expect(smallLeaf[0].type).toBe('STAMP');
+    if (largeLeaf[0].type === 'STAMP' && smallLeaf[0].type === 'STAMP') {
+      expect(smallLeaf[0].assetId).toBe('rotary-leaf');
+      expect(smallLeaf[0].footprint?.u).toBeGreaterThan(
+        1 / smallLeaf[0].repeatCount!,
+      );
+      expect(smallLeaf[0].repeatCount).toBeGreaterThan(
+        largeLeaf[0].repeatCount!,
+      );
+      expect(largeLeaf[0].footprint?.v).toBeGreaterThan(
+        smallLeaf[0].footprint!.v,
+      );
+    }
+
+    const lotus = createRotaryPattern(
+      'filled-lotus',
+      '#174a94',
+      0.2,
+      0.5,
+      2,
+      profile,
+    );
+    expect(lotus[0].type).toBe('STAMP');
+    if (lotus[0].type === 'STAMP')
+      expect(lotus[0].assetId).toBe('filled-lotus');
+  });
+
+  it('rejects unknown rotary motifs', () => {
+    expect(() =>
+      createRotaryPattern(
+        'unknown' as never,
+        '#174a94',
+        0,
+        0.5,
+        1,
+        createProfile(),
+      ),
+    ).toThrow('Unknown rotary pattern');
   });
 });

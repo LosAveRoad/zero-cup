@@ -45,7 +45,9 @@ export function stampAction(
     color: string;
     scale?: number;
     rotation?: number;
+    footprint?: UVPoint;
     symmetry?: SymmetryCount;
+    repeatCount?: number;
   },
 ): PaintingAction {
   const base: PaintingAction = {
@@ -56,9 +58,13 @@ export function stampAction(
     color: options.color,
     scale: options.scale ?? 1,
     rotation: options.rotation ?? 0,
+    ...(options.footprint ? { footprint: { ...options.footprint } } : {}),
   };
   if (options.symmetry && options.symmetry > 1) {
     base.symmetry = options.symmetry;
+  }
+  if (options.repeatCount && options.repeatCount > 1) {
+    base.repeatCount = options.repeatCount;
   }
   return base;
 }

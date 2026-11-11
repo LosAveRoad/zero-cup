@@ -6,19 +6,18 @@ import type {
 import type { ProfileControlPoint } from '../types/artwork';
 import {
   PROFILE_LIMITS,
+  VESSEL_HEIGHT_SCALE_RANGE,
   computeVesselMetrics,
   createProfile,
-  createTemplateProfile,
-  matchTemplateId,
   moveControlPoint,
   sampleProfile,
-  type ProfileTemplateId,
 } from '../core/geometry/profile';
 
 export interface ProfileEditorProps {
   points: ProfileControlPoint[];
+  heightScale: number;
   onChange: (points: ProfileControlPoint[]) => void;
-  templates?: ProfileTemplateId[];
+  onHeightScaleChange: (scale: number) => void;
   targetPoints?: ProfileControlPoint[];
   onReset?: () => void;
   disabled?: boolean;
@@ -33,20 +32,6 @@ const RADIUS_SCALE = (VIEW_WIDTH / 2 - PADDING) / PROFILE_LIMITS.maxRadius;
 const TOP_Y = PADDING + 4;
 const BOTTOM_Y = VIEW_HEIGHT - PADDING - 18;
 const HEIGHT_SCALE = BOTTOM_Y - TOP_Y;
-
-const ALL_TEMPLATES: ProfileTemplateId[] = [
-  'bottle',
-  'meiping',
-  'cup',
-  'melon',
-];
-
-const TEMPLATE_LABELS: Record<ProfileTemplateId, string> = {
-  bottle: '玉壶春瓶',
-  meiping: '梅瓶',
-  cup: '压手杯',
-  melon: '甜瓜瓶',
-};
 
 interface DragState {
   id: string;
@@ -103,8 +88,9 @@ function pathFor(
  */
 export function ProfileEditor({
   points,
+  heightScale,
   onChange,
-  templates = ALL_TEMPLATES,
+  onHeightScaleChange,
   targetPoints,
   onReset,
   disabled = false,
@@ -114,7 +100,6 @@ export function ProfileEditor({
   const pointsRef = useRef<ProfileControlPoint[]>(points);
   const onChangeRef = useRef(onChange);
   const [dragging, setDragging] = useState<string | null>(null);
-  const template = useMemo(() => matchTemplateId(points), [points]);
 
   useEffect(() => {
     pointsRef.current = points;
@@ -428,39 +413,22 @@ export function ProfileEditor({
           );
         })}
       </svg>
-      <div className="vessel-metrics-grid" aria-label="器物造物参数">
-        <div className="metric-chip">
-          <span className="metric-label">预估容积</span>
-          <strong>{metrics.volumeMl} mL</strong>
-        </div>
-        <div className="metric-chip">
-          <span className="metric-label">器身修长比</span>
-          <strong>{metrics.slenderness.toFixed(2)}</strong>
-        </div>
-        <div className="metric-chip">
-          <span className="metric-label">重心稳度</span>
-          <strong>{metrics.stabilityScore} 分</strong>
-        </div>
-      </div>
       <div className="profile-editor-controls">
         <label>
-          模板
-          <select
-            aria-label="器型模板"
-            value={template}
+          器身高度
+          <input
+            aria-label="器身高度缩放"
+            type="range"
+            min={VESSEL_HEIGHT_SCALE_RANGE.min}
+            max={VESSEL_HEIGHT_SCALE_RANGE.max}
+            step={0.01}
+            value={heightScale}
             disabled={disabled}
-            onChange={(event) => {
-              const kind = event.target.value as ProfileTemplateId | '';
-              if (kind) onChange(createTemplateProfile(kind));
-            }}
-          >
-            <option value="">选择模板</option>
-            {templates.map((kind) => (
-              <option key={kind} value={kind}>
-                {TEMPLATE_LABELS[kind]}
-              </option>
-            ))}
-          </select>
+            onChange={(event) =>
+              onHeightScaleChange(Number(event.target.value))
+            }
+          />
+          <output aria-hidden="true">{heightScale.toFixed(2)}×</output>
         </label>
         <button
           type="button"

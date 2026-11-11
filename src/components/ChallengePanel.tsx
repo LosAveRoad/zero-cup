@@ -1,21 +1,14 @@
 import type { JSX } from 'react';
 import {
-  CHALLENGES,
   scoreLabel,
   scoreStars,
   type ChallengeDefinition,
-  type ChallengeId,
 } from '../core/challenges/challenges';
 
 export interface ChallengePanelProps {
-  /** undefined = 自由创作 */
   challenge: ChallengeDefinition | undefined;
-  onChallengeChange: (id: ChallengeId | undefined) => void;
   /** current match score, 0-100 */
   score?: number;
-  /** 载入目标器型 */
-  onApplyTarget?: () => void;
-  disabled?: boolean;
 }
 
 /** Layout of the inline silhouette preview. */
@@ -92,44 +85,19 @@ function Stars({ count }: { count: number }): JSX.Element {
 }
 
 /**
- * Challenge chooser: pick one of the three vessel shapes (or free-form),
- * then see the target silhouette and how well the current outline matches it.
+ * Shows the chosen vessel goal and how well the current outline matches it.
  */
 export function ChallengePanel({
   challenge,
-  onChallengeChange,
   score,
-  onApplyTarget,
-  disabled = false,
 }: ChallengePanelProps): JSX.Element {
-  const activeId = challenge?.id;
+  if (!challenge) return <></>;
   const currentScore = challenge ? score : undefined;
   return (
     <div
       className="challenge-panel"
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
-      <div className="segmented" role="group" aria-label="器型挑战">
-        <button
-          type="button"
-          aria-pressed={activeId === undefined}
-          disabled={disabled}
-          onClick={() => onChallengeChange(undefined)}
-        >
-          自由创作
-        </button>
-        {CHALLENGES.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={activeId === item.id}
-            disabled={disabled}
-            onClick={() => onChallengeChange(item.id)}
-          >
-            {item.name}
-          </button>
-        ))}
-      </div>
       {challenge && (
         <div
           className="challenge-detail"
@@ -176,16 +144,6 @@ export function ChallengePanel({
             <p className="challenge-score muted" style={{ margin: 0 }}>
               尚未评分
             </p>
-          )}
-          {onApplyTarget && (
-            <button
-              type="button"
-              className="quiet"
-              disabled={disabled}
-              onClick={onApplyTarget}
-            >
-              载入目标器型
-            </button>
           )}
         </div>
       )}

@@ -70,6 +70,22 @@ describe('painting command factories', () => {
     ).toMatchObject({ scale: 1.5, rotation: Math.PI, symmetry: 4 });
   });
 
+  it('keeps a rotary ring repeat count in one editable stamp command', () => {
+    expect(
+      stampAction(0.5, 0.5, {
+        assetId: 'rotary-leaf',
+        color: '#174a94',
+        repeatCount: 18,
+        footprint: { u: 1 / 18, v: 0.08 },
+      }),
+    ).toMatchObject({
+      type: 'STAMP',
+      assetId: 'rotary-leaf',
+      repeatCount: 18,
+      footprint: { u: 1 / 18, v: 0.08 },
+    });
+  });
+
   it('exposes the dragged path of brush and erase commands only', () => {
     const path = [{ u: 0.5, v: 0.5 }];
     expect(

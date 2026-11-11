@@ -7,6 +7,19 @@ const MAX_HEIGHT = 1;
 const SPLINE_SEGMENTS = 64;
 const DEFAULT_RADII = [0.35, 0.48, 0.57, 0.6, 0.53, 0.36, 0.25, 0.3];
 
+async function chooseGoalInEncyclopedia(page: Page, name: string) {
+  await page.getByRole('button', { name: '器型百科', exact: true }).click();
+  const encyclopedia = page.getByRole('dialog', { name: '器型百科' });
+  if (
+    (await encyclopedia
+      .getByRole('button', { name: `选择创作：${name}` })
+      .count()) === 0
+  ) {
+    await encyclopedia.getByRole('button', { name: '← 返回器型目录' }).click();
+  }
+  await encyclopedia.getByRole('button', { name: `选择创作：${name}` }).click();
+}
+
 interface ControlPoint {
   id: string;
   radius: number;
@@ -454,7 +467,43 @@ test.describe('outline editor: dragging control points', () => {
   });
 });
 
-test.describe('outline editor: templates, reset and radius sliders', () => {
+test.describe('outline editor and reset', () => {
+  test('the studio fits one desktop viewport and opens the gallery from the header', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1670, height: 940 });
+    await page.goto('/?prologue=skip');
+    await expect(
+      page.getByRole('heading', { name: '01 拉坯工作台' }),
+    ).toBeVisible();
+    await chooseGoalInEncyclopedia(page, '梅瓶');
+
+    for (const viewport of [
+      { width: 1670, height: 940 },
+      { width: 1280, height: 720 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const dimensions = await page.evaluate(() => {
+        const sidebar = document.querySelector('aside')!;
+        return {
+          pageHeight: document.documentElement.scrollHeight,
+          viewportHeight: window.innerHeight,
+          sidebarHeight: sidebar.scrollHeight,
+          sidebarClientHeight: sidebar.clientHeight,
+        };
+      });
+      expect(dimensions.pageHeight).toBeLessThanOrEqual(
+        dimensions.viewportHeight,
+      );
+      expect(dimensions.sidebarHeight).toBeLessThanOrEqual(
+        dimensions.sidebarClientHeight,
+      );
+    }
+
+    await page.getByRole('button', { name: /我的作品/ }).click();
+    await expect(page.getByRole('dialog', { name: '我的作品' })).toBeVisible();
+  });
+
   test('resetting the outline restores the default vessel shape', async ({
     page,
   }) => {
@@ -475,47 +524,27 @@ test.describe('outline editor: templates, reset and radius sliders', () => {
         (await readControlPoints(page)).map((point) => point.radius),
       )
       .toEqual(DEFAULT_RADII);
-    expect(await page.getByLabel('器型模板').inputValue()).toBe('');
+    await expect(page.getByLabel('器型模板')).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
-  test('choosing a template loads a different outline', async ({ page }) => {
+  test('the shaping editor exposes height scaling and no template selector', async ({
+    page,
+  }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
 
-    const before = (await readControlPoints(page)).map((point) => point.radius);
-    await page.getByLabel('器型模板').selectOption('cup');
-    await expect(page.getByLabel('器型模板')).toHaveValue('cup');
-
-    await expect
-      .poll(async () =>
-        (await readControlPoints(page)).map((point) => point.radius),
-      )
-      .not.toEqual(before);
+    await expect(
+      page.getByRole('heading', { name: '01 拉坯工作台' }),
+    ).toBeVisible();
+    await expect(page.getByLabel('器身高度缩放')).toBeVisible();
+    await expect(page.getByLabel('器型模板')).toHaveCount(0);
+    await expect(page.getByText(/预估容量|器身修长比|重心稳定/)).toHaveCount(0);
+    await chooseGoalInEncyclopedia(page, '压手杯');
     const after = (await readControlPoints(page)).map((point) => point.radius);
-    for (const radius of after) {
-      expect(radius).toBeGreaterThanOrEqual(MIN_RADIUS);
-      expect(radius).toBeLessThanOrEqual(MAX_RADIUS);
-    }
-    // The template is a different silhouette, not the default bowl.
-    expect(after[7]).toBeGreaterThan(before[7]);
+    expect(after).toEqual([0.3, 0.4, 0.48, 0.54, 0.58, 0.62, 0.66, 0.7]);
     expect(await readOutlineSamples(page)).toHaveLength(SPLINE_SEGMENTS + 1);
-    expect(errors).toEqual([]);
-  });
-
-  test('the radius sliders still drive the outline', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto('/?prologue=skip');
-
-    const radius = page.getByLabel('截面 4 半径');
-    await radius.fill('0.72');
-    await expect(radius).toHaveValue('0.72');
-    await expect(page.getByTestId('profile-point-3')).toHaveAttribute(
-      'data-radius',
-      '0.72',
-    );
     expect(errors).toEqual([]);
   });
 });
@@ -558,7 +587,7 @@ test.describe('outline editor: the monotone spline never overshoots', () => {
     expect(errors).toEqual([]);
   });
 
-  test('a steep profile built from the sliders stays inside the bracket', async ({
+  test('a steep profile shaped with keyboard controls stays inside the bracket', async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -567,14 +596,18 @@ test.describe('outline editor: the monotone spline never overshoots', () => {
 
     // A narrow neck that opens into the widest radius and drops straight to
     // the narrowest one: the sharpest turn the editor allows.
-    await page.getByLabel('截面 3 半径').fill('0.5');
-    await page.getByLabel('截面 4 半径').fill('0.9');
-    await page.getByLabel('截面 5 半径').fill('0.08');
+    const neck = page.getByTestId('profile-point-2');
+    const shoulder = page.getByTestId('profile-point-3');
+    const body = page.getByTestId('profile-point-4');
+    for (let i = 0; i < 7; i++) await neck.press('ArrowLeft');
+    for (let i = 0; i < 6; i++) await shoulder.press('Shift+ArrowRight');
+    for (let i = 0; i < 8; i++) await body.press('Shift+ArrowLeft');
+    for (let i = 0; i < 5; i++) await body.press('ArrowLeft');
 
     const points = await readControlPoints(page);
-    expect(points.map((point) => point.radius)).toEqual([
-      0.35, 0.48, 0.5, 0.9, 0.08, 0.36, 0.25, 0.3,
-    ]);
+    expect(points[2].radius).toBeCloseTo(0.5, 2);
+    expect(points[3].radius).toBeCloseTo(0.9, 2);
+    expect(points[4].radius).toBeCloseTo(0.08, 2);
 
     await expectOutlineInsideNeighbourBracket(page, points);
 
@@ -592,16 +625,11 @@ test.describe('vessel shape challenges', () => {
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
 
-    await page.getByRole('button', { name: '梅瓶', exact: true }).click();
-    await expect(
-      page.getByRole('button', { name: '梅瓶', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(
-      page.getByRole('button', { name: '自由创作', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'false');
+    await chooseGoalInEncyclopedia(page, '梅瓶');
     await expect(
       page.getByRole('img', { name: '梅瓶 目标剪影' }),
     ).toBeVisible();
+    await expect(page.getByRole('group', { name: '器型挑战' })).toHaveCount(0);
 
     const score = page.getByText(/吻合度 \d+%/);
     await expect(score).toHaveCount(1);
@@ -614,16 +642,12 @@ test.describe('vessel shape challenges', () => {
       page.getByRole('img', { name: /评分 [0-3] 星/ }),
     ).toBeVisible();
 
-    const before = (await readControlPoints(page)).map((point) => point.radius);
-    await page.getByRole('button', { name: '载入目标器型' }).click();
-
-    // The outline becomes the 梅瓶 target shape.
+    // Choosing the encyclopedia goal loads its outline immediately.
     await expect
       .poll(async () =>
         (await readControlPoints(page)).map((point) => point.radius),
       )
       .toEqual([0.2, 0.3, 0.42, 0.54, 0.62, 0.56, 0.26, 0.15]);
-    expect(before).not.toEqual([0.2, 0.3, 0.42, 0.54, 0.62, 0.56, 0.26, 0.15]);
     await expect(score).toContainText('吻合度 100%');
     expect(errors).toEqual([]);
   });
@@ -633,21 +657,16 @@ test.describe('vessel shape challenges', () => {
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
 
-    await page.getByRole('button', { name: '梅瓶', exact: true }).click();
+    await chooseGoalInEncyclopedia(page, '梅瓶');
     await expect(page.getByText(/吻合度 \d+%/)).toHaveCount(1);
 
-    await page.getByRole('button', { name: '自由创作', exact: true }).click();
+    await chooseGoalInEncyclopedia(page, '自由创作');
 
     await expect(page.getByText(/吻合度/)).toHaveCount(0);
     await expect(page.getByRole('img', { name: '梅瓶 目标剪影' })).toHaveCount(
       0,
     );
-    await expect(
-      page.getByRole('button', { name: '自由创作', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(
-      page.getByRole('button', { name: '梅瓶', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('group', { name: '器型挑战' })).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 });

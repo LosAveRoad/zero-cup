@@ -275,7 +275,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     const box = await enterPainting(page);
 
     // 笔刷调到最粗：软件渲染下墨迹更密，像素计数更稳。
-    await page.getByLabel('笔刷粗细').selectOption({ label: '粗' });
+    await page.getByRole('slider', { name: '笔刷粗细' }).press('End');
 
     // 第一笔单独占器身上方的一条横带，其余的笔画在下面的横带上，
     // 这样才能在撤销之后单独检查「最早那一笔」还在不在。
@@ -352,7 +352,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
-    await page.getByLabel('笔刷粗细').selectOption({ label: '粗' });
+    await page.getByRole('slider', { name: '笔刷粗细' }).press('End');
 
     const strokes = 24;
     const body = await bodyRows(page, box, [0.45, 0.52, 0.59, 0.66]);
@@ -479,7 +479,7 @@ test.describe('绘制阶段的资源与输入行为 / painting stage resources',
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/?prologue=skip');
     const box = await enterPainting(page);
-    await page.getByLabel('笔刷粗细').selectOption({ label: '粗' });
+    await page.getByRole('slider', { name: '笔刷粗细' }).press('End');
 
     // performance.memory 是 Chromium 专有的，其它内核上是 undefined。
     const readHeap = () =>

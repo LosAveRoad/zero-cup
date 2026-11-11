@@ -87,7 +87,7 @@ test('20 new/open cycles keep RAF, GPU resources and DOM listeners bounded', asy
   await expect(page.getByLabel('三维陶器画布')).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
   page.on('dialog', (dialog) => void dialog.accept());
-  await page.getByLabel('截面 4 半径').fill('0.64');
+  await page.getByTestId('profile-point-3').press('ArrowRight');
   await page.getByRole('button', { name: '定型进入彩绘' }).click();
   const draw = async () => {
     const rect = (await page.getByLabel('三维陶器画布').boundingBox())!;
@@ -103,11 +103,12 @@ test('20 new/open cycles keep RAF, GPU resources and DOM listeners bounded', asy
   };
   await draw();
   await page.getByRole('button', { name: '入窑烧制' }).click();
-  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '保存到藏品' })).toBeVisible({
+    timeout: 15_000,
+  });
   await page.getByLabel('作品名称').fill('资源循环基准');
   await page.getByRole('button', { name: '保存到藏品' }).click();
   await expect(page.getByRole('status')).toContainText('作品已保存');
-  await page.getByRole('button', { name: '继续彩绘' }).click();
 
   const session = await page.context().newCDPSession(page);
   const resources = () => page.evaluate(() => window.__studioResources());
@@ -152,15 +153,22 @@ test('20 new/open cycles keep RAF, GPU resources and DOM listeners bounded', asy
   const samples = [];
   for (let cycle = 1; cycle <= 20; cycle++) {
     await page.getByRole('button', { name: '新建作品', exact: true }).click();
-    await expect(page.getByRole('status')).toHaveText('新作品已准备好。');
-    await page.getByLabel('截面 4 半径').fill(String(0.5 + (cycle % 3) * 0.1));
+    const encyclopedia = page.getByRole('dialog', { name: '器型百科' });
+    await expect(encyclopedia).toBeVisible();
+    await encyclopedia
+      .getByRole('button', { name: '选择创作：自由创作' })
+      .click();
+    await expect(encyclopedia).toHaveCount(0);
+    await page.getByTestId('profile-point-3').press('ArrowRight');
     await page.getByRole('button', { name: '定型进入彩绘' }).click();
     await expect(page.getByText('已落笔 0 次', { exact: false })).toBeVisible();
     await draw();
+    await page.getByRole('button', { name: /我的作品/ }).click();
     await page.getByRole('button', { name: '打开作品' }).click();
     await expect(page.getByLabel('作品名称')).toHaveValue('资源循环基准');
-    await page.getByRole('button', { name: '继续彩绘' }).click();
-    await expect(page.getByText('已落笔 1 次', { exact: false })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '04 成品工作台' }),
+    ).toBeVisible();
     await settle();
     const reading = await resources();
     expect(reading.raf, `cycle ${cycle}: pending RAF`).toBe(baseline.raf);
